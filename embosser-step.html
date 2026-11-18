@@ -333,7 +333,6 @@ async function generate() {
   document.getElementById('exportFemaleStep').disabled = true;
   if (!svgText) return;
   try {
-    await ensureOpenCascade();
     const s = {
       plateW: +document.getElementById('plateW').value,
       plateH: +document.getElementById('plateH').value,
@@ -350,14 +349,16 @@ async function generate() {
     const usableWidth = s.plateW - 14 - s.pinSize;
     if (s.artWidth > usableWidth) throw new Error(`Riduci la larghezza del disegno sotto ${usableWidth.toFixed(1)} mm: i perni devono restare fuori dall’area del disegno.`);
     const data = getSvgPolygons();
+    updatePreview(data.polygons, data, s);
+    document.getElementById('status').textContent = 'Anteprima generata. Caricamento OpenCascade e creazione STEP…';
+    await ensureOpenCascade();
     document.getElementById('status').textContent = 'Generazione B-Rep e booleane…';
     maleShape = buildMaleShape(data.polygons, data, s);
     femaleShape = buildFemaleShape(data.polygons, data, s);
-    updatePreview(data.polygons, data, s);
     const cavityDepth = s.paperThickness + s.verticalClearance;
     document.getElementById('exportMaleStep').disabled = false;
     document.getElementById('exportFemaleStep').disabled = false;
-    document.getElementById('status').textContent = `Anteprima aggiornata. Cavità: ${cavityDepth.toFixed(2)} mm. Perne: ${s.pinSize} × ${s.pinSize} mm, sporgenti ${s.pinHeight} mm.`;
+    document.getElementById('status').textContent = `Matrici STEP pronte. Cavità: ${cavityDepth.toFixed(2)} mm. Perne: ${s.pinSize} × ${s.pinSize} mm, sporgenti ${s.pinHeight} mm.`;
   } catch (error) {
     console.error(error);
     document.getElementById('status').textContent = 'Errore: ' + error.message;
