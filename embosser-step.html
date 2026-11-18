@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>SVG → STEP matrici embosser</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 20px; background:#111; color:#eee; }
+  .panel { max-width: 1060px; margin:auto; background:#1c1c1c; padding:18px; border-radius:10px; }
+  label { display:block; margin-top:10px; font-size:14px; }
+  input, select, button { padding:7px; margin-top:4px; font-size:14px; }
+  button { background:#2f80ed; color:white; border:0; border-radius:6px; cursor:pointer; }
+  button:disabled { background:#555; cursor:not-allowed; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:180px; }
+  #preview { width:100%; height:460px; margin-top:16px; border-radius:8px; background:#222; }
+  #status { margin-top:10px; font-size:14px; color:#9fd49f; min-height:40px; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>SVG → coppia di matrici STEP per embosser</h1>
+  <input type="file" id="svgFile" accept=".svg">
+  <div class="row">
+    <div><label>Piastra L × H [mm]</label>
+      <input id="plateW" type="number" value="100" min="30" step="1">
+      <input id="plateH" type="number" value="70" min="30" step="1">
+    </div>
+    <div><label>Spessore matrici [mm]</label>
+      <input id="baseThickness" type="number" value="4" min="2" step="0.5">
+    </div>
+    <div><label>Altezza rilievo [mm]</label>
+      <input id="reliefHeight" type="number" value="0.8" min="0.3" max="2" step="0.1">
+    </div>
+  </div>
+  <div class="row">
+    <div><label>Spessore carta [mm]</label>
+      <input id="paperThickness" type="number" value="0.12" min="0.05" max="1" step="0.01">
+    </div>
+    <div><label>Gioco verticale [mm]</label>
+      <input id="verticalClearance" type="number" value="0.10" min="0" max="0.5" step="0.01">
+    </div>
+    <div><label>Gioco laterale [mm]</label>
+      <input id="lateralClearance" type="number" value="0.10" min="0" max="0.5" step="0.01">
+    </div>
+  </div>
+  <div class="row">
+    <div><label>Larghezza disegno [mm]</label>
+      <input id="artWidth" type="number" value="60" min="5" step="1">
+    </div>
+    <div><label>Perne: lato × altezza [mm]</label>
+      <input id="pinSize" type="number" value="3" min="2" max="6" step="0.5">
+      <input id="pinHeight" type="number" value="4" min="2" max="10" step="0.5">
+    </div>
+    <div><label>Posizione disegno</label>
+      <select id="align">
+        <option value="center">Centrato</option>
+        <option value="top">In alto</option>
+        <option value="bottom">In basso</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>&nbsp;</label>
+      <button id="exportMaleStep" disabled>Esporta positiva STEP</button>
+      <button id="exportFemaleStep" disabled>Esporta negativa STEP</button>
+    </div>
+  </div>
+  <div id="preview"></div>
+  <div id="status">Carica un SVG. La prima generazione STEP può richiedere qualche secondo.</div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import initOpenCascade from 'https://cdn.jsdelivr.net/npm/opencascade.js@0.0.23/dist/opencascade.js';
+
+const $ = id => document.getElementById(id);
+let oc = null;
+let svgText = null;
+let maleShape = null;
+let femaleShape = null;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+camera.position.set(0, -180, 210);
+camera.up.set(0, 0, 1);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+document.getElementById('preview').appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const light = new THREE.DirectionalLight(0xffffff, 1.2);
+light.position.set(90, -90, 170);
+scene.add(light);
+const malePreview = new THREE.Group();
+const femalePreview = new THREE.Group();
+scene.add(malePreview, femalePreview);
+
+function resize() {
+  const box = document.getElementById('preview');
+  renderer.setSize(box.clientWidth, box.clientHeight, false);
+  camera.aspect = box.clientWidth / box.clientHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+function clearPreview(group) {
+  group.traverse(obj => { if (obj.geometry) obj.geometry.dispose(); });
+  group.clear();
+}
+
+function getSvgPolygons() {
+  const loader = new SVGLoader();
+  const parsed = loader.parse(svgText);
+  const polygons = [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const svgPath of parsed.paths) {
+    const bb = svgPath.getBoundingBox();
+    minX = Math.min(minX, bb.min.x);
+    minY = Math.min(minY, bb.min.y);
+    maxX = Math.max(maxX, bb.max.x);
+    maxY = Math.max(maxY, bb.max.y);
+    for (const shape of SVGLoader.createShapes(svgPath)) {
+      const sampled = shape.extractPoints(24);
+      polygons.push({ outer: sampled.shape, holes: sampled.holes });
+    }
+  }
+  if (!polygons.length) throw new Error('Nessuna forma riempita trovata nell’SVG.');
+  return { polygons, minX, minY, maxX, maxY };
+}
+
+function transformPoint(p, bb, artWidth, plateH, align) {
+  const svgW = bb.maxX - bb.minX;
+  const svgH = bb.maxY - bb.minY;
+  const scale = artWidth / svgW;
+  const artHeight = svgH * scale;
+  let x = (p.x - bb.minX) * scale - artWidth / 2;
+  let y = -((p.y - bb.minY) * scale);
+  if (align === 'center') y += artHeight / 2;
+  else if (align === 'top') y += plateH / 2 - 8 - artHeight / 2 + artHeight / 2;
+  else y += -plateH / 2 + 8 + artHeight / 2;
+  return { x, y };
+}
+
+function makePolygonFace(points) {
+  const maker = new oc.BRepBuilderAPI_MakePolygon_1();
+  for (const p of points) maker.Add_1(new oc.gp_Pnt_3(p.x, p.y, 0));
+  maker.Close();
+  const face = new oc.BRepBuilderAPI_MakeFace_15(maker.Wire(), false);
+  return face.Face();
+}
+
+function extrudePolygon(points, zStart, height) {
+  const face = makePolygonFace(points);
+  const translation = new oc.gp_Trsf_1();
+  translation.SetTranslation_1(new oc.gp_Vec_4(0, 0, zStart));
+  const movedFace = new oc.BRepBuilderAPI_Transform_2(face, translation, false).Shape();
+  const prism = new oc.BRepPrimAPI_MakePrism_1(movedFace, new oc.gp_Vec_4(0, 0, height), false, true);
+  prism.Build(new oc.Message_ProgressRange_1());
+  return prism.Shape();
+}
+
+function fuse(a, b) {
+  const operation = new oc.BRepAlgoAPI_Fuse_3(a, b, new oc.Message_ProgressRange_1());
+  operation.Build(new oc.Message_ProgressRange_1());
+  return operation.Shape();
+}
+
+function cut(a, b) {
+  const operation = new oc.BRepAlgoAPI_Cut_3(a, b, new oc.Message_ProgressRange_1());
+  operation.Build(new oc.Message_ProgressRange_1());
+  return operation.Shape();
+}
+
+function makeBox(x, y, z, w, h, d) {
+  const corner = new oc.gp_Pnt_3(x - w / 2, y - h / 2, z);
+  const box = new oc.BRepPrimAPI_MakeBox_1(corner, w, h, d);
+  box.Build(new oc.Message_ProgressRange_1());
+  return box.Shape();
+}
+
+function buildArtSolid(polygons, bb, s, zStart, height, expanded) {
+  const artWidth = expanded ? s.artWidth + s.lateralClearance * 2 : s.artWidth;
+  let result = null;
+  for (const polygon of polygons) {
+    const outer = polygon.outer.map(p => transformPoint(p, bb, artWidth, s.plateH, s.align));
+    const solid = extrudePolygon(outer, zStart, height);
+    result = result ? fuse(result, solid) : solid;
+    for (const hole of polygon.holes) {
+      const holePoints = hole.map(p => transformPoint(p, bb, artWidth, s.plateH, s.align));
+      const holeSolid = extrudePolygon(holePoints, zStart - 0.2, height + 0.4);
+      result = cut(result, holeSolid);
+    }
+  }
+  return result;
+}
+
+function buildMaleShape(polygons, bb, s) {
+  let plate = makeBox(0, 0, 0, s.plateW, s.plateH, s.baseThickness);
+  const art = buildArtSolid(polygons, bb, s, s.baseThickness, s.reliefHeight, false);
+  plate = fuse(plate, art);
+  const pocketSize = s.pinSize + 0.1;
+  const pocketDepth = s.pinHeight + 0.2;
+  for (const x of [-1, 1]) {
+    const pocket = makeBox(x * (s.plateW / 2 - 7), 0, -0.2, pocketSize, pocketSize, pocketDepth + 0.2);
+    plate = cut(plate, pocket);
+  }
+  return plate;
+}
+
+function buildFemaleShape(polygons, bb, s) {
+  const cavityDepth = s.paperThickness + s.verticalClearance;
+  let plate = makeBox(0, 0, 0, s.plateW, s.plateH, s.baseThickness);
+  const cutter = buildArtSolid(polygons, bb, s, s.baseThickness - cavityDepth - 0.5, cavityDepth + 1.0, true);
+  plate = cut(plate, cutter);
+  for (const x of [-1, 1]) {
+    const pin = makeBox(x * (s.plateW / 2 - 7), 0, s.baseThickness, s.pinSize, s.pinSize, s.pinHeight);
+    plate = fuse(plate, pin);
+  }
+  return plate;
+}
+
+function updatePreview(polygons, bb, s) {
+  clearPreview(malePreview);
+  clearPreview(femalePreview);
+  const material = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.1, roughness: 0.6 });
+  const malePlate = new THREE.Mesh(new THREE.BoxGeometry(s.plateW, s.plateH, s.baseThickness), material);
+  malePlate.position.z = s.baseThickness / 2;
+  malePreview.add(malePlate);
+  const artWidth = s.artWidth;
+  const svgW = bb.maxX - bb.minX;
+  const svgH = bb.maxY - bb.minY;
+  const scale = artWidth / svgW;
+  for (const polygon of polygons) {
+    const shape = new THREE.Shape();
+    polygon.outer.forEach((p, i) => {
+      const q = transformPoint(p, bb, artWidth, s.plateH, s.align);
+      if (i === 0) shape.moveTo(q.x, q.y); else shape.lineTo(q.x, q.y);
+    });
+    shape.closePath();
+    for (const hole of polygon.holes) {
+      const holePath = new THREE.Path();
+      hole.forEach((p, i) => {
+        const q = transformPoint(p, bb, artWidth, s.plateH, s.align);
+        if (i === 0) holePath.moveTo(q.x, q.y); else holePath.lineTo(q.x, q.y);
+      });
+      holePath.closePath();
+      shape.holes.push(holePath);
+    }
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: s.reliefHeight, bevelEnabled: false, curveSegments: 24 });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.z = s.baseThickness;
+    malePreview.add(mesh);
+  }
+  const femalePlate = new THREE.Mesh(new THREE.BoxGeometry(s.plateW, s.plateH, s.baseThickness), material);
+  femalePlate.position.z = s.baseThickness / 2;
+  femalePreview.add(femalePlate);
+  const cavityMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const cavityWidth = artWidth + s.lateralClearance * 2;
+  for (const polygon of polygons) {
+    const shape = new THREE.Shape();
+    polygon.outer.forEach((p, i) => {
+      const q = transformPoint(p, bb, cavityWidth, s.plateH, s.align);
+      if (i === 0) shape.moveTo(q.x, q.y); else shape.lineTo(q.x, q.y);
+    });
+    shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.4, bevelEnabled: false, curveSegments: 24 });
+    const mesh = new THREE.Mesh(geometry, cavityMaterial);
+    mesh.position.z = s.baseThickness - 0.4;
+    femalePreview.add(mesh);
+  }
+  const pinGeometry = new THREE.BoxGeometry(s.pinSize, s.pinSize, s.pinHeight);
+  for (const x of [-1, 1]) {
+    const pin = new THREE.Mesh(pinGeometry, material);
+    pin.position.set(x * (s.plateW / 2 - 7), 0, s.baseThickness + s.pinHeight / 2);
+    femalePreview.add(pin);
+  }
+  const pocketGeometry = new THREE.BoxGeometry(s.pinSize + 0.1, s.pinSize + 0.1, s.pinHeight + 0.2);
+  for (const x of [-1, 1]) {
+    const pocket = new THREE.Mesh(pocketGeometry, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    pocket.position.set(x * (s.plateW / 2 - 7), 0, (s.pinHeight + 0.2) / 2);
+    malePreview.add(pocket);
+  }
+  malePreview.position.x = -s.plateW / 2 - 12;
+  femalePreview.position.x = s.plateW / 2 + 12;
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  camera.position.set(center.x, center.y - size.x * 1.7, center.z + size.x * 1.5);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function downloadSTEP(shape, filename) {
+  const writer = new oc.STEPControl_Writer_1();
+  const status = writer.Transfer(shape, oc.STEPControl_StepModelType.STEPControl_AsIs, true, new oc.Message_ProgressRange_1());
+  if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new Error('OpenCascade non è riuscito a convertire il solido in STEP.');
+  const writeStatus = writer.Write(filename);
+  if (writeStatus !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) throw new Error('OpenCascade non è riuscito a scrivere il file STEP.');
+  const content = oc.FS.readFile('/' + filename, { encoding: 'utf8' });
+  const blob = new Blob([content], { type: 'application/step' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function ensureOpenCascade() {
+  if (oc) return;
+  document.getElementById('status').textContent = 'Caricamento OpenCascade.js / WASM…';
+  oc = await initOpenCascade();
+  document.getElementById('status').textContent = 'OpenCascade pronto.';
+}
+
+async function generate() {
+  maleShape = null;
+  femaleShape = null;
+  document.getElementById('exportMaleStep').disabled = true;
+  document.getElementById('exportFemaleStep').disabled = true;
+  if (!svgText) return;
+  try {
+    await ensureOpenCascade();
+    const s = {
+      plateW: +document.getElementById('plateW').value,
+      plateH: +document.getElementById('plateH').value,
+      baseThickness: +document.getElementById('baseThickness').value,
+      reliefHeight: +document.getElementById('reliefHeight').value,
+      paperThickness: +document.getElementById('paperThickness').value,
+      verticalClearance: +document.getElementById('verticalClearance').value,
+      lateralClearance: +document.getElementById('lateralClearance').value,
+      artWidth: +document.getElementById('artWidth').value,
+      pinSize: +document.getElementById('pinSize').value,
+      pinHeight: +document.getElementById('pinHeight').value,
+      align: document.getElementById('align').value
+    };
+    const usableWidth = s.plateW - 14 - s.pinSize;
+    if (s.artWidth > usableWidth) throw new Error(`Riduci la larghezza del disegno sotto ${usableWidth.toFixed(1)} mm: i perni devono restare fuori dall’area del disegno.`);
+    const data = getSvgPolygons();
+    document.getElementById('status').textContent = 'Generazione B-Rep e booleane…';
+    maleShape = buildMaleShape(data.polygons, data, s);
+    femaleShape = buildFemaleShape(data.polygons, data, s);
+    updatePreview(data.polygons, data, s);
+    const cavityDepth = s.paperThickness + s.verticalClearance;
+    document.getElementById('exportMaleStep').disabled = false;
+    document.getElementById('exportFemaleStep').disabled = false;
+    document.getElementById('status').textContent = `Anteprima aggiornata. Cavità: ${cavityDepth.toFixed(2)} mm. Perne: ${s.pinSize} × ${s.pinSize} mm, sporgenti ${s.pinHeight} mm.`;
+  } catch (error) {
+    console.error(error);
+    document.getElementById('status').textContent = 'Errore: ' + error.message;
+  }
+}
+
+document.getElementById('svgFile').addEventListener('change', event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { svgText = e.target.result; generate(); };
+  reader.readAsText(file);
+});
+
+for (const id of ['plateW','plateH','baseThickness','reliefHeight','paperThickness','verticalClearance','lateralClearance','artWidth','pinSize','pinHeight','align']) {
+  document.getElementById(id).addEventListener('change', generate);
+}
+
+document.getElementById('exportMaleStep').addEventListener('click', () => {
+  try {
+    downloadSTEP(maleShape, 'embosser_positivo.step');
+    document.getElementById('status').textContent = 'Esportato embosser_positivo.step';
+  } catch (error) {
+    document.getElementById('status').textContent = 'Errore export: ' + error.message;
+  }
+});
+
+document.getElementById('exportFemaleStep').addEventListener('click', () => {
+  try {
+    downloadSTEP(femaleShape, 'embosser_negativo.step');
+    document.getElementById('status').textContent = 'Esportato embosser_negativo.step';
+  } catch (error) {
+    document.getElementById('status').textContent = 'Errore export: ' + error.message;
+  }
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
