@@ -81,7 +81,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
-import initOpenCascade from 'https://cdn.jsdelivr.net/npm/opencascade.js@0.0.23/dist/opencascade.js';
 
 const $ = id => document.getElementById(id);
 let oc = null;
@@ -321,9 +320,25 @@ function downloadSTEP(shape, filename) {
 
 async function ensureOpenCascade() {
   if (oc) return;
-  document.getElementById('status').textContent = 'Caricamento OpenCascade.js / WASM…';
-  oc = await initOpenCascade();
-  document.getElementById('status').textContent = 'OpenCascade pronto.';
+
+  document.getElementById('status').textContent =
+    'Caricamento OpenCascade.js / WASM…';
+
+  try {
+    const module = await import(
+      'https://cdn.jsdelivr.net/npm/opencascade.js@1.1.4/dist/opencascade.full.js'
+    );
+
+    oc = await module.default();
+
+    document.getElementById('status').textContent = 'OpenCascade pronto.';
+  } catch (error) {
+    console.error(error);
+    throw new Error(
+      'Impossibile caricare OpenCascade.js. ' +
+      'L’anteprima resta disponibile, ma l’export STEP no.'
+    );
+  }
 }
 
 async function generate() {
