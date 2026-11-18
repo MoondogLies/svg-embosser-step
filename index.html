@@ -12,7 +12,7 @@ button{background:#2f80ed;color:white;border:0;border-radius:6px;cursor:pointer}
 button:disabled{background:#555;cursor:not-allowed}
 .row{display:flex;gap:14px;flex-wrap:wrap}
 .row>div{flex:1;min-width:180px}
-#preview{width:100%;height:360px;margin-top:16px;border-radius:8px;background:#222}
+#preview{width:100%;height:460px;margin-top:16px;border-radius:8px;background:#222;overflow:hidden}
 #status{margin-top:10px;font-size:14px;color:#9fd49f;min-height:40px}
 </style>
 </head>
@@ -32,22 +32,56 @@ button:disabled{background:#555;cursor:not-allowed}
 </div>
 <div class="row">
 <div><label>Larghezza disegno [mm]</label><input id="artWidth" type="number" value="60" min="5" step="1"></div>
+<div><label>Altezza disegno [mm] — 0 = automatica</label><input id="artHeight" type="number" value="0" min="0" step="1"></div>
 <div><label>Perne: lato × altezza [mm]</label><input id="pinSize" type="number" value="3" min="2" max="6" step="0.5"><input id="pinHeight" type="number" value="4" min="2" max="10" step="0.5"></div>
-<div><label>Posizione disegno</label><select id="align"><option value="center">Centrato</option><option value="top">In alto</option><option value="bottom">In basso</option></select></div>
 </div>
 <div class="row">
+<div><label>Posizione disegno</label><select id="align"><option value="center">Centrato</option><option value="top">In alto</option><option value="bottom">In basso</option></select></div>
 <div><label>&nbsp;</label><button id="exportMale" disabled>Esporta positiva STL</button><button id="exportFemale" disabled>Esporta negativa STL</button></div>
 </div>
-<canvas id="preview"></canvas>
-<div id="status">Carica un SVG. Questa versione funziona anche aprendo direttamente il file HTML.</div>
+<div id="preview"></div>
+<div id="status">Carica un SVG. L’anteprima mostra le due matrici esportate.</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 let polygons=[];
 let bounds=null;
 let maleTriangles=[];
 let femaleTriangles=[];
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x222222);
+const camera=new THREE.PerspectiveCamera(45,1,0.1,2000);
+camera.position.set(0,-180,220);
+camera.up.set(0,0,1);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(devicePixelRatio);
+$('preview').appendChild(renderer.domElement);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+const light=new THREE.DirectionalLight(0xffffff,1.2);
+light.position.set(100,-100,180);
+scene.add(light);
+const maleGroup=new THREE.Group();
+const femaleGroup=new THREE.Group();
+scene.add(maleGroup,femaleGroup);
+
+function resize3D(){
+const box=$('preview');
+const width=box.clientWidth;
+const height=box.clientHeight;
+if(!width||!height)return;
+renderer.setSize(width,height);
+camera.aspect=width/height;
+camera.updateProjectionMatrix();
+}
+const resizeObserver=new ResizeObserver(resize3D);
+resizeObserver.observe($('preview'));
+addEventListener('resize',resize3D);
+resize3D();
 
 function svgToPolygons(svgText){
 const parser=new DOMParser();
@@ -96,14 +130,16 @@ return{polygons:result,bounds:{minX,minY,maxX,maxY}};
 function transformPoint(p,bounds,s,expansion){
 const svgW=bounds.maxX-bounds.minX;
 const svgH=bounds.maxY-bounds.minY;
-const width=s.artWidth+expansion;
-const scale=width/svgW;
-const height=svgH*scale;
-let x=(p.x-bounds.minX)*scale-width/2;
+const targetW=s.artWidth+expansion;
+const targetH=s.artHeight>0?s.artHeight+expansion:Infinity;
+const scale=Math.min(targetW/svgW,targetH/svgH);
+const drawW=svgW*scale;
+const drawH=svgH*scale;
+let x=(p.x-bounds.minX)*scale-drawW/2;
 let y=-((p.y-bounds.minY)*scale);
-if(s.align==='center')y+=height/2;
-else if(s.align==='top')y+=s.plateH/2-8-height/2;
-else y+=-s.plateH/2+8+height/2;
+if(s.align==='center')y+=drawH/2;
+else if(s.align==='top')y+=s.plateH/2-8-drawH/2;
+else y+=-s.plateH/2+8+drawH/2;
 return{x,y};
 }
 
@@ -218,26 +254,43 @@ a.href=url;a.download=filename;a.click();
 URL.revokeObjectURL(url);
 }
 
-function drawPreview(){
-const canvas=$('preview');
-const ctx=canvas.getContext('2d');
-const scale=Math.min(canvas.width/(bounds.maxX-bounds.minX+40),canvas.height/(bounds.maxY-bounds.minY+40));
-ctx.clearRect(0,0,canvas.width,canvas.height);
-ctx.save();
-ctx.translate(canvas.width/2,canvas.height/2);
-ctx.scale(scale,scale);
-ctx.translate(-(bounds.minX+bounds.maxX)/2,-(bounds.minY+bounds.maxY)/2);
-ctx.strokeStyle='#7fd4ff';ctx.fillStyle='rgba(127,212,255,0.25)';ctx.lineWidth=2/scale;
-for(const polygon of polygons){
-ctx.beginPath();
-polygon.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);});
-ctx.closePath();ctx.fill();ctx.stroke();
+function clearGroup(group){
+group.traverse(obj=>{if(obj.geometry)obj.geometry.dispose();});
+group.clear();
 }
-ctx.restore();
+
+function buildMesh(triangles,color){
+const positions=[];
+for(const triangle of triangles){
+positions.push(triangle.a.x,triangle.a.y,triangle.a.z);
+positions.push(triangle.b.x,triangle.b.y,triangle.b.z);
+positions.push(triangle.c.x,triangle.c.y,triangle.c.z);
+}
+const geometry=new THREE.BufferGeometry();
+geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+geometry.computeVertexNormals();
+const material=new THREE.MeshStandardMaterial({color:color,metalness:0.1,roughness:0.65});
+return new THREE.Mesh(geometry,material);
+}
+
+function update3DPreview(){
+clearGroup(maleGroup);
+clearGroup(femaleGroup);
+if(maleTriangles.length)maleGroup.add(buildMesh(maleTriangles,0xcccccc));
+if(femaleTriangles.length)femaleGroup.add(buildMesh(femaleTriangles,0x9fb8d8));
+const s=getSettings();
+maleGroup.position.x=-(s.plateW/2+12);
+femaleGroup.position.x=s.plateW/2+12;
+const center=new THREE.Vector3(0,0,s.baseThickness/2);
+const distance=Math.max(s.plateW,s.plateH)*2.2;
+camera.position.set(0,center.y-distance*0.8,center.z+distance);
+controls.target.copy(center);
+controls.update();
+resize3D();
 }
 
 function getSettings(){
-return{plateW:+$('plateW').value,plateH:+$('plateH').value,baseThickness:+$('baseThickness').value,reliefHeight:+$('reliefHeight').value,paperThickness:+$('paperThickness').value,verticalClearance:+$('verticalClearance').value,lateralClearance:+$('lateralClearance').value,artWidth:+$('artWidth').value,pinSize:+$('pinSize').value,pinHeight:+$('pinHeight').value,align:$('align').value};
+return{plateW:+$('plateW').value,plateH:+$('plateH').value,baseThickness:+$('baseThickness').value,reliefHeight:+$('reliefHeight').value,paperThickness:+$('paperThickness').value,verticalClearance:+$('verticalClearance').value,lateralClearance:+$('lateralClearance').value,artWidth:+$('artWidth').value,artHeight:+$('artHeight').value,pinSize:+$('pinSize').value,pinHeight:+$('pinHeight').value,align:$('align').value};
 }
 
 function generate(){
@@ -251,6 +304,7 @@ if(s.artWidth>usable)throw new Error('Riduci la larghezza del disegno sotto '+us
 const cavityDepth=s.paperThickness+s.verticalClearance;
 maleTriangles=buildPositive({polygons,bounds},s);
 femaleTriangles=buildNegative({polygons,bounds},s);
+update3DPreview();
 $('exportMale').disabled=false;$('exportFemale').disabled=false;
 $('status').textContent='Matrici STL pronte. Cavità: '+cavityDepth.toFixed(2)+' mm. Perne: '+s.pinSize+' × '+s.pinSize+' mm, sporgenti '+s.pinHeight+' mm.';
 }catch(error){
@@ -267,7 +321,7 @@ reader.onload=e=>{
 try{
 const data=svgToPolygons(e.target.result);
 polygons=data.polygons;bounds=data.bounds;
-drawPreview();generate();
+generate();
 }catch(error){
 console.error(error);
 $('status').textContent='Errore SVG: '+error.message;
@@ -276,7 +330,7 @@ $('status').textContent='Errore SVG: '+error.message;
 reader.readAsText(file);
 });
 
-for(const id of['plateW','plateH','baseThickness','reliefHeight','paperThickness','verticalClearance','lateralClearance','artWidth','pinSize','pinHeight','align']){
+for(const id of['plateW','plateH','baseThickness','reliefHeight','paperThickness','verticalClearance','lateralClearance','artWidth','artHeight','pinSize','pinHeight','align']){
 $(id).addEventListener('change',generate);
 }
 
@@ -290,14 +344,12 @@ try{writeBinarySTL(femaleTriangles,'embosser_negativo.stl');$('status').textCont
 catch(error){$('status').textContent='Errore export: '+error.message;}
 });
 
-function resizeCanvas(){
-const canvas=$('preview');
-canvas.width=canvas.clientWidth;
-canvas.height=canvas.clientHeight;
-if(polygons.length)drawPreview();
+function animate(){
+requestAnimationFrame(animate);
+controls.update();
+renderer.render(scene,camera);
 }
-addEventListener('resize',resizeCanvas);
-resizeCanvas();
+animate();
 </script>
 </body>
 </html>
