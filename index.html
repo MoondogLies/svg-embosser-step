@@ -121,7 +121,9 @@ addTriangle(triangles,a,c,d);
 }
 
 function addCap(triangles,outer,holes,z,up){
-const indices=THREE.ShapeUtils.triangulateShape(outer,holes||[]);
+const outerVectors=outer.map(p=>new THREE.Vector2(p[0],p[1]));
+const holeVectors=(holes||[]).map(hole=>hole.map(p=>new THREE.Vector2(p[0],p[1])));
+const indices=THREE.ShapeUtils.triangulateShape(outerVectors,holeVectors);
 for(const index of indices){
 const a=outer[index[0]],b=outer[index[1]],c=outer[index[2]];
 const A={x:a[0],y:a[1],z:z};
