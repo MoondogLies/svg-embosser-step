@@ -127,17 +127,23 @@ function getSvgPolygons() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
   for (const svgPath of parsed.paths) {
-    const points = svgPath.getPoints(12);
+    const shapes = svgPath.toShapes(false);
 
-    for (const point of points) {
-      minX = Math.min(minX, point.x);
-      minY = Math.min(minY, point.y);
-      maxX = Math.max(maxX, point.x);
-      maxY = Math.max(maxY, point.y);
-    }
-
-    for (const shape of SVGLoader.createShapes(svgPath)) {
+    for (const shape of shapes) {
       const sampled = shape.extractPoints(24);
+      const allPoints = [...sampled.shape];
+
+      for (const hole of sampled.holes) {
+        allPoints.push(...hole);
+      }
+
+      for (const point of allPoints) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+      }
+
       polygons.push({ outer: sampled.shape, holes: sampled.holes });
     }
   }
