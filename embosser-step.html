@@ -125,17 +125,23 @@ function getSvgPolygons() {
   const parsed = loader.parse(svgText);
   const polygons = [];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
   for (const svgPath of parsed.paths) {
-    const bb = svgPath.getBoundingBox();
-    minX = Math.min(minX, bb.min.x);
-    minY = Math.min(minY, bb.min.y);
-    maxX = Math.max(maxX, bb.max.x);
-    maxY = Math.max(maxY, bb.max.y);
+    const points = svgPath.getPoints(12);
+
+    for (const point of points) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+
     for (const shape of SVGLoader.createShapes(svgPath)) {
       const sampled = shape.extractPoints(24);
       polygons.push({ outer: sampled.shape, holes: sampled.holes });
     }
   }
+
   if (!polygons.length) throw new Error('Nessuna forma riempita trovata nell’SVG.');
   return { polygons, minX, minY, maxX, maxY };
 }
