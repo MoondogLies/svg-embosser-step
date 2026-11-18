@@ -12,7 +12,7 @@
   button:disabled { background:#555; cursor:not-allowed; }
   .row { display:flex; gap:14px; flex-wrap:wrap; }
   .row > div { flex:1; min-width:180px; }
-  #preview { width:100%; height:460px; margin-top:16px; border-radius:8px; background:#222; }
+  #preview { width:100%; height: clamp(320px, 60vh, 560px); margin-top:16px; border-radius:8px; background:#222; overflow:hidden; }
   #status { margin-top:10px; font-size:14px; color:#9fd49f; min-height:40px; }
 </style>
 </head>
@@ -95,7 +95,7 @@ camera.position.set(0, -180, 210);
 camera.up.set(0, 0, 1);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio);
-document.getElementById('preview').appendChild(renderer.domElement);
+$('preview').appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -107,11 +107,19 @@ const femalePreview = new THREE.Group();
 scene.add(malePreview, femalePreview);
 
 function resize() {
-  const box = document.getElementById('preview');
-  renderer.setSize(box.clientWidth, box.clientHeight, false);
-  camera.aspect = box.clientWidth / box.clientHeight;
+  const box = $('preview');
+  const width = box.clientWidth;
+  const height = box.clientHeight;
+
+  if (width === 0 || height === 0) return;
+
+  renderer.setSize(width, height);
+  camera.aspect = width / height;
   camera.updateProjectionMatrix();
 }
+
+const resizeObserver = new ResizeObserver(resize);
+resizeObserver.observe($('preview'));
 addEventListener('resize', resize);
 resize();
 
@@ -312,6 +320,7 @@ function updatePreview(polygons, bb, s) {
   camera.position.set(center.x, center.y - size.x * 1.7, center.z + size.x * 1.5);
   controls.target.copy(center);
   controls.update();
+  resize();
 }
 
 function downloadSTEP(shape, filename) {
