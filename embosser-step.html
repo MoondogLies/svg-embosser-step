@@ -346,11 +346,20 @@ async function ensureOpenCascade() {
     'Caricamento OpenCascade.js / WASM…';
 
   try {
-    const module = await import(
-      'https://cdn.jsdelivr.net/npm/opencascade.js@1.1.1/build/opencascade.js'
-    );
+    const OCCT_VERSION = '2.0.0-beta.94e2944';
 
-    oc = await module.default();
+    const openCascadeJsUrl =
+      `https://cdn.jsdelivr.net/npm/opencascade.js@${OCCT_VERSION}/dist/opencascade.full.js`;
+
+    const openCascadeWasmUrl =
+      `https://cdn.jsdelivr.net/npm/opencascade.js@${OCCT_VERSION}/dist/opencascade.full.wasm`;
+
+    const module = await import(openCascadeJsUrl);
+
+    oc = await module.default({
+      locateFile: () => openCascadeWasmUrl,
+      ALLOW_MEMORY_GROWTH: true
+    });
 
     document.getElementById('status').textContent = 'OpenCascade pronto.';
   } catch (error) {
