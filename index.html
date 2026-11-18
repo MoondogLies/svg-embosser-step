@@ -46,7 +46,7 @@ button:disabled{background:#555;cursor:not-allowed}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 const $=id=>document.getElementById(id);
-let polygons=[];
+let shapes=[];
 let bounds=null;
 let maleTriangles=[];
 let femaleTriangles=[];
@@ -83,7 +83,7 @@ resizeObserver.observe($('preview'));
 addEventListener('resize',resize3D);
 resize3D();
 
-function svgToPolygons(svgText){
+function svgToShapes(svgText){
 const parser=new DOMParser();
 const doc=parser.parseFromString(svgText,'image/svg+xml');
 const svg=doc.querySelector('svg');
@@ -97,7 +97,7 @@ liveSvg.innerHTML=svg.innerHTML;
 hidden.appendChild(liveSvg);
 const paths=[...liveSvg.querySelectorAll('path')];
 if(!paths.length)throw new Error('Nessun tracciato SVG trovato.');
-const result=[];
+const loops=[];
 let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
 for(const original of paths){
 const fill=(original.getAttribute('fill')||'black').toLowerCase();
@@ -118,13 +118,52 @@ points.push({x:p.x,y:p.y});
 minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);
 maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);
 }
-result.push(points);
+loops.push(points);
 liveSvg.removeChild(path);
 }
 }
 document.body.removeChild(hidden);
-if(!result.length)throw new Error('Nessuna forma riempita trovata nell’SVG.');
-return{polygons:result,bounds:{minX,minY,maxX,maxY}};
+if(!loops.length)throw new Error('Nessuna forma riempita trovata nell’SVG.');
+const shapes=[];
+for(let i=0;i<loops.length;i++){
+let depth=0;
+let parentIndex=-1;
+let parentArea=Infinity;
+for(let j=0;j<loops.length;j++){
+if(i===j)continue;
+if(pointInPolygon(loops[i][0],loops[j])){
+depth++;
+const area=Math.abs(polygonArea(loops[j]));
+if(area<parentArea){parentArea=area;parentIndex=j;}
+}
+}
+if(depth%2===0){
+shapes.push({outerIndex:i,outer:loops[i],holes:[]});
+}else{
+const parent=shapes.find(s=>s.outerIndex===parentIndex);
+if(parent)parent.holes.push(loops[i]);
+}
+}
+return{shapes,bounds:{minX,minY,maxX,maxY}};
+}
+
+function pointInPolygon(point,polygon){
+let inside=false;
+for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+const xi=polygon[i].x,yi=polygon[i].y;
+const xj=polygon[j].x,yj=polygon[j].y;
+const intersect=((yi>point.y)!==(yj>point.y))&&(point.x<(xj-xi)*(point.y-yi)/(yj-yi)+xi);
+if(intersect)inside=!inside;
+}
+return inside;
+}
+
+function polygonArea(points){
+let area=0;
+for(let i=0,j=points.length-1;i<points.length;j=i++){
+area+=points[j].x*points[i].y-points[i].x*points[j].y;
+}
+return area/2;
 }
 
 function transformPoint(p,bounds,s,expansion){
@@ -172,13 +211,19 @@ if(up)addTriangle(triangles,a,b,c);else addTriangle(triangles,a,c,b);
 geometry.dispose();
 }
 
-function addPrism(triangles,outer,zBottom,zTop){
-addCap(triangles,outer,[],zBottom,false);
-addCap(triangles,outer,[],zTop,true);
-for(let i=0;i<outer.length;i++){
-const a=outer[i],b=outer[(i+1)%outer.length];
+function addWalls(triangles,points,zBottom,zTop,reverse){
+const pts=reverse?[...points].reverse():points;
+for(let i=0;i<pts.length;i++){
+const a=pts[i],b=pts[(i+1)%pts.length];
 addQuad(triangles,{x:a[0],y:a[1],z:zBottom},{x:b[0],y:b[1],z:zBottom},{x:b[0],y:b[1],z:zTop},{x:a[0],y:a[1],z:zTop});
 }
+}
+
+function addPrismWithHoles(triangles,outer,holes,zBottom,zTop){
+addCap(triangles,outer,holes,zBottom,false);
+addCap(triangles,outer,holes,zTop,true);
+addWalls(triangles,outer,zBottom,zTop,false);
+for(const hole of holes)addWalls(triangles,hole,zBottom,zTop,true);
 }
 
 function addBox(triangles,cx,cy,z0,w,h,d){
@@ -196,9 +241,10 @@ addQuad(triangles,a,b,c,dd);
 function buildPositive(data,s){
 const triangles=[];
 addBox(triangles,0,0,0,s.plateW,s.plateH,s.baseThickness);
-for(const polygon of data.polygons){
-const outer=polygon.map(p=>{const q=transformPoint(p,data.bounds,s,0);return[q.x,q.y];});
-addPrism(triangles,outer,s.baseThickness,s.baseThickness+s.reliefHeight);
+for(const shape of data.shapes){
+const outer=shape.outer.map(p=>{const q=transformPoint(p,data.bounds,s,0);return[q.x,q.y];});
+const holes=shape.holes.map(hole=>hole.map(p=>{const q=transformPoint(p,data.bounds,s,0);return[q.x,q.y];}));
+addPrismWithHoles(triangles,outer,holes,s.baseThickness,s.baseThickness+s.reliefHeight);
 }
 const pocketSize=s.pinSize+0.1;
 for(const x of[-1,1]){
@@ -213,18 +259,21 @@ const triangles=[];
 const cavityDepth=s.paperThickness+s.verticalClearance;
 const cavityBottom=s.baseThickness-cavityDepth;
 const outerRect=[[-s.plateW/2,-s.plateH/2],[s.plateW/2,-s.plateH/2],[s.plateW/2,s.plateH/2],[-s.plateW/2,s.plateH/2]];
-const holes=data.polygons.map(polygon=>polygon.map(p=>{const q=transformPoint(p,data.bounds,s,s.lateralClearance*2);return[q.x,q.y];}));
-addCap(triangles,outerRect,holes,s.baseThickness,true);
+addCap(triangles,outerRect,[],s.baseThickness,true);
 addCap(triangles,outerRect,[],0,false);
 for(let i=0;i<4;i++){
 const a=outerRect[i],b=outerRect[(i+1)%4];
 addQuad(triangles,{x:a[0],y:a[1],z:0},{x:b[0],y:b[1],z:0},{x:b[0],y:b[1],z:s.baseThickness},{x:a[0],y:a[1],z:s.baseThickness});
 }
+for(const shape of data.shapes){
+const outer=shape.outer.map(p=>{const q=transformPoint(p,data.bounds,s,s.lateralClearance*2);return[q.x,q.y];});
+const holes=shape.holes.map(hole=>hole.map(p=>{const q=transformPoint(p,data.bounds,s,s.lateralClearance*2);return[q.x,q.y];}));
+addCap(triangles,outerRect,[outer],s.baseThickness,true);
+addWalls(triangles,outer,cavityBottom,s.baseThickness,true);
+addCap(triangles,outer,holes,cavityBottom,true);
 for(const hole of holes){
-addCap(triangles,hole,[],cavityBottom,true);
-for(let i=0;i<hole.length;i++){
-const a=hole[i],b=hole[(i+1)%hole.length];
-addQuad(triangles,{x:a[0],y:a[1],z:cavityBottom},{x:b[0],y:b[1],z:cavityBottom},{x:b[0],y:b[1],z:s.baseThickness},{x:a[0],y:a[1],z:s.baseThickness});
+addWalls(triangles,hole,cavityBottom,s.baseThickness,false);
+addCap(triangles,hole,[],s.baseThickness,true);
 }
 }
 for(const x of[-1,1])addBox(triangles,x*(s.plateW/2-7),0,s.baseThickness,s.pinSize,s.pinSize,s.pinHeight);
@@ -296,14 +345,14 @@ return{plateW:+$('plateW').value,plateH:+$('plateH').value,baseThickness:+$('bas
 function generate(){
 maleTriangles=[];femaleTriangles=[];
 $('exportMale').disabled=true;$('exportFemale').disabled=true;
-if(!polygons.length)return;
+if(!shapes.length)return;
 try{
 const s=getSettings();
 const usable=s.plateW-14-s.pinSize;
 if(s.artWidth>usable)throw new Error('Riduci la larghezza del disegno sotto '+usable.toFixed(1)+' mm.');
 const cavityDepth=s.paperThickness+s.verticalClearance;
-maleTriangles=buildPositive({polygons,bounds},s);
-femaleTriangles=buildNegative({polygons,bounds},s);
+maleTriangles=buildPositive({shapes,bounds},s);
+femaleTriangles=buildNegative({shapes,bounds},s);
 update3DPreview();
 $('exportMale').disabled=false;$('exportFemale').disabled=false;
 $('status').textContent='Matrici STL pronte. Cavità: '+cavityDepth.toFixed(2)+' mm. Perne: '+s.pinSize+' × '+s.pinSize+' mm, sporgenti '+s.pinHeight+' mm.';
@@ -319,8 +368,8 @@ if(!file)return;
 const reader=new FileReader();
 reader.onload=e=>{
 try{
-const data=svgToPolygons(e.target.result);
-polygons=data.polygons;bounds=data.bounds;
+const data=svgToShapes(e.target.result);
+shapes=data.shapes;bounds=data.bounds;
 generate();
 }catch(error){
 console.error(error);
