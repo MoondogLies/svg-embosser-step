@@ -121,16 +121,19 @@ addTriangle(triangles,a,c,d);
 }
 
 function addCap(triangles,outer,holes,z,up){
-const outerVectors=outer.map(p=>new THREE.Vector2(p[0],p[1]));
-const holeVectors=(holes||[]).map(hole=>hole.map(p=>new THREE.Vector2(p[0],p[1])));
-const indices=THREE.ShapeUtils.triangulateShape(outerVectors,holeVectors);
-for(const index of indices){
-const a=outer[index[0]],b=outer[index[1]],c=outer[index[2]];
-const A={x:a[0],y:a[1],z:z};
-const B={x:b[0],y:b[1],z:z};
-const C={x:c[0],y:c[1],z:z};
-if(up)addTriangle(triangles,A,B,C);else addTriangle(triangles,A,C,B);
+const shape=new THREE.Shape(outer.map(p=>new THREE.Vector2(p[0],p[1])));
+for(const hole of holes||[]){
+shape.holes.push(new THREE.Path(hole.map(p=>new THREE.Vector2(p[0],p[1]))));
 }
+const geometry=new THREE.ShapeGeometry(shape);
+const position=geometry.attributes.position;
+for(let i=0;i<position.count;i+=3){
+const a={x:position.getX(i),y:position.getY(i),z:z};
+const b={x:position.getX(i+1),y:position.getY(i+1),z:z};
+const c={x:position.getX(i+2),y:position.getY(i+2),z:z};
+if(up)addTriangle(triangles,a,b,c);else addTriangle(triangles,a,c,b);
+}
+geometry.dispose();
 }
 
 function addPrism(triangles,outer,zBottom,zTop){
