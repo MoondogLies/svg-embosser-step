@@ -74,18 +74,37 @@
     return union(paths.map((path) => path.map((p) => ({ X: -p.X, Y: p.Y })).reverse()));
   }
 
-  // Piastra con angoli R6 e tacca triangolare di orientamento sul lato superiore.
+  // Forma di piastra e guide; i valori mancanti assumono quelli storici (R6, perni a 7 mm dal bordo, tacca 4 × 2 mm a 12 mm).
+  function plateGeometry(s) {
+    const v = (x, d) => (x === undefined || x === null || Number.isNaN(x) ? d : x);
+    return {
+      cornerR: v(s.cornerR, 6),
+      pinInset: v(s.pinInset, 7),
+      pinY: v(s.pinY, 0),
+      notchX: v(s.notchX, 12),
+      notchW: v(s.notchW, 4),
+      notchD: v(s.notchD, 2),
+      margin: v(s.margin, 2),
+    };
+  }
+
+  // Piastra con angoli arrotondati e tacca triangolare di orientamento sul lato superiore
+  // (notchX: centro della tacca dal bordo sinistro; notchW: larghezza sul bordo; notchD: profondità, 0 = senza tacca).
   function plateShape(s) {
-    const x = -s.w / 2 + 12,
-      y = s.h / 2;
+    const g = plateGeometry(s);
+    const plate = union([roundedRect(s.w, s.h, Math.min(g.cornerR, s.w / 2, s.h / 2))]);
+    if (!(g.notchD > 0 && g.notchW > 0)) return plate;
+    const x = -s.w / 2 + g.notchX,
+      y = s.h / 2,
+      half = ((g.notchW / 2) * (g.notchD + 1)) / g.notchD; // il triangolo sporge 1 mm oltre il bordo
     const notch = [
       [
-        { X: Math.round((x - 3) * S), Y: Math.round((y + 1) * S) },
-        { X: Math.round((x + 3) * S), Y: Math.round((y + 1) * S) },
-        { X: Math.round(x * S), Y: Math.round((y - 2) * S) },
+        { X: Math.round((x - half) * S), Y: Math.round((y + 1) * S) },
+        { X: Math.round((x + half) * S), Y: Math.round((y + 1) * S) },
+        { X: Math.round(x * S), Y: Math.round((y - g.notchD) * S) },
       ],
     ];
-    return diff(union([roundedRect(s.w, s.h, 6)]), notch);
+    return diff(plate, notch);
   }
 
   function oriented(p, positive) {
@@ -146,6 +165,6 @@
 
   E.geometry = {
     normalize, op, union, diff, intersect, same, area, rect, roundedRect, reflected,
-    plateShape, oriented, invertArtwork, clipToSheet, offset,
+    plateGeometry, plateShape, oriented, invertArtwork, clipToSheet, offset,
   };
 })((self.Embosser = self.Embosser || {}));

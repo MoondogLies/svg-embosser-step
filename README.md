@@ -20,7 +20,8 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Gioco laterale applicato ai contorni della cavità tramite offset.
 - Perni sulla negativa e fori guida passanti sulla positiva.
 - Opzione per specchiare la negativa per l’accoppiamento faccia a faccia.
-- Piastre con angoli arrotondati R6 e tacca triangolare di orientamento sul bordo superiore (specchiata sulla negativa quando è attiva la specchiatura).
+- Piastre con angoli arrotondati e tacca triangolare di orientamento sul bordo superiore (specchiata sulla negativa quando è attiva la specchiatura); raggio, tacca, posizione dei perni e margine sono regolabili.
+- Pianta 2D di positiva e negativa viste dall’alto, con rilievo, cavità, perni, fori, svasatura, margine, foglio e zone troppo sottili; visibile anche prima di caricare il disegno.
 - Preset con formato del foglio, ad esempio biglietto da visita 85 × 55 mm, con ritaglio del disegno al perimetro del foglio.
 - Inversione pieni/vuoti, con area di inversione a scelta tra contorno esterno e rettangolo d’ingombro.
 - Rispetto di `fill-rule` (`nonzero`/`evenodd`) e degli stili CSS interni all’SVG.
@@ -42,7 +43,7 @@ La versione attuale esporta STL, non STEP, e non utilizza OpenCascade o WebAssem
 2. Scegli un preset oppure **Personalizzato**, poi imposta dimensioni delle piastre e del disegno.
 3. Regola rilievo, spessore carta, giochi e perni.
 4. Controlla entrambe le matrici nell’anteprima: trascina per ruotare e usa la rotella per lo zoom. Il pulsante **Inquadra** ripristina un’inquadratura complessiva.
-5. Controlla gli avvisi sotto lo stato: le zone troppo sottili per l’ugello sono evidenziate in arancione nell’anteprima.
+5. Controlla la **Pianta** sotto l’anteprima 3D e gli avvisi sotto lo stato: le zone troppo sottili per l’ugello sono evidenziate in arancione in entrambe le viste.
 6. Dopo il superamento dei controlli, usa **Esporta 3MF (entrambe sul piano)** oppure **Esporta positiva STL** ed **Esporta negativa STL**.
 7. Importa i file nello slicer e verifica dimensioni, orientamento, cavità e anteprima dei layer prima della stampa. Le coordinate dell’app sono espresse in millimetri; se lo slicer chiede l’unità, scegli mm.
 
@@ -104,7 +105,19 @@ I parametri aggiornano le mesh quando confermi la modifica del campo. Se un valo
 
 Valori iniziali (preset Personalizzato, senza profilo stampante): piastra 100 × 70 × 4 mm, rilievo 0,8 mm, carta 0,12 mm, gioco verticale 0,1 mm, gioco laterale 0,15 mm, disegno largo 60 mm, perni 5 × 4 mm con gioco 0,30 mm per lato, parametri di stampa a 0. Il profilo A1, attivo per impostazione predefinita, sostituisce i valori indicati nella sezione dedicata. La piastra deve misurare almeno 24 × 16 mm.
 
-Forma fissa delle piastre: angoli R6 mm, tacca di orientamento a 12 mm dal bordo sinistro sul lato superiore, perni centrati in altezza, con il centro a 7 mm dai bordi laterali, margine di sicurezza di 2 mm dal bordo per disegno e cavità.
+### Piastra e guide
+
+| Parametro | Predefinito | Effetto |
+| --- | --- | --- |
+| Raggio angoli piastra | 6 mm | 0 = angoli vivi; massimo metà del lato corto. |
+| Margine di sicurezza dal bordo | 2 mm | Distanza minima di disegno e cavità dal bordo della piastra. Senza foglio, con posizione in alto o in basso il disegno resta a margine + 1 mm dal bordo. |
+| Distanza centro perni dal bordo laterale | 7 mm | Posizione orizzontale dei due perni (simmetrici). |
+| Spostamento verticale perni | 0 mm | Sposta entrambi i perni in alto (+) o in basso (−); unico parametro che accetta valori negativi. |
+| Posizione tacca dal bordo sinistro | 12 mm | Centro della tacca di orientamento sul lato superiore della positiva. |
+| Larghezza tacca sul bordo | 4 mm | Larghezza dell’intaglio sul bordo superiore. |
+| Profondità tacca | 2 mm | 0 = senza tacca. La tacca deve stare sul tratto dritto del bordo, fuori dagli angoli arrotondati. |
+
+I valori predefiniti riproducono esattamente la piastra delle versioni precedenti (verificato dal test integrato). L’app rifiuta raggi troppo grandi, tacche sugli angoli, perni che escono dalla piastra o che si sovrappongono al foglio, al disegno o alla tacca.
 
 ## Preset
 
@@ -158,15 +171,16 @@ Il pulsante **Test integrato** esegue nel browser una serie di controlli, senza 
 - molti contorni con il fondo allineato sulla stessa retta, senza e con profilo A1;
 - profilo A1: quote multiple del layer, effetto dell’inclinazione sui volumi, rifiuto di piastre oltre il piano, rilevamento di parti sottili e fessure strette;
 - preset biglietto da visita: ritaglio al foglio, guide fuori dal foglio, angoli R6, tacca e specchiatura;
+- piastra e guide personalizzate (angoli vivi, senza tacca, perni spostati), rifiuto delle geometrie non valide e coincidenza dei valori predefiniti con la piastra storica;
 - controllo di spigoli e volume su tutte le mesh generate.
 
 L’esito atteso inizia con:
 
 ```text
-Test superato: 66 mesh controllate.
+Test superato: 68 mesh controllate.
 ```
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `print-1` nel messaggio di stato.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `plan-1` nel messaggio di stato.
 
 ## File esportati
 
@@ -181,7 +195,7 @@ Non richiede una fase di build: `index.html` carica script classici (non moduli 
 | File | Contenuto | Dove gira |
 | --- | --- | --- |
 | `js/config.js` | Revisione, parametri con valori iniziali, preset, profili stampante | pagina e worker |
-| `js/geometry.js` | Operazioni 2D con Clipper: unione, differenza, offset, piastra R6 con tacca, inversione, ritaglio al foglio | pagina e worker |
+| `js/geometry.js` | Operazioni 2D con Clipper: unione, differenza, offset, piastra con angoli e tacca configurabili, inversione, ritaglio al foglio | pagina e worker |
 | `js/mesh.js` | Mesh a strati, triangolazione dei tappi, riparazione delle giunzioni a T, verifica, scrittura STL binario | pagina e worker |
 | `js/model.js` | Posizionamento del disegno, controlli su guide e margini, generazione delle due matrici, test geometrici; nessun accesso al DOM | pagina e worker |
 | `js/svg.js` | Lettura dell’SVG: stili CSS, `fill-rule`, stroke, dimensioni reali, elementi non supportati, test di interpretazione | solo pagina (serve `DOMParser`) |
@@ -189,6 +203,7 @@ Non richiede una fase di build: `index.html` carica script classici (non moduli 
 | `js/engine.js` | Invio dei calcoli al worker, annullamento del calcolo superato da una modifica più recente, ripiego nella pagina | pagina |
 | `js/worker.js` | Web Worker che esegue generazione e test geometrici | worker |
 | `js/viewer.js` | Anteprima 3D Three.js | pagina |
+| `js/plan.js` | Pianta 2D in SVG inline; pianta della sola piastra quando non c’è un disegno | pagina |
 | `js/app.js` | Interfaccia: campi, preset, stato, export | pagina |
 
 Flusso: la pagina legge l’SVG in dati semplici, il worker genera e verifica le mesh e le restituisce come `Float32Array` trasferiti senza copia; anteprima ed export usano gli stessi triangoli. Se si modifica un parametro mentre un calcolo è in corso, il worker viene terminato e il calcolo riparte con i valori nuovi.
@@ -210,7 +225,7 @@ npx playwright install chromium
 npm test
 ```
 
-Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
+Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
 
 ## GitHub Pages
 

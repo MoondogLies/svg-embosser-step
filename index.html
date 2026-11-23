@@ -28,6 +28,24 @@ button:disabled{cursor:default;opacity:.55}
 #warnings{margin:0;padding:8px 12px 8px 32px;background:#3a2f1c;border-radius:4px;color:#ffd890}
 #warnings:empty{display:none}
 small,.note{color:#bbc4d0}
+h2{font-size:1.15em;margin:16px 0 6px}
+#plan svg{display:block;width:100%;height:auto;max-height:420px;background:#1b1f25;border-radius:4px}
+#plan .plate{fill:#2c333c;stroke:#8b95a3;stroke-width:1.2}
+#plan .safe{fill:none;stroke:#6b7785;stroke-width:1;stroke-dasharray:4 3}
+#plan .relief{fill:#d4d8df;stroke:#f1f3f6;stroke-width:.8}
+#plan .cavity{fill:#93bad8;fill-opacity:.55;stroke:#93bad8;stroke-width:.8}
+#plan .pin{fill:#93bad8;stroke:#cfe2f0;stroke-width:1}
+#plan .hole{fill:#14171c;stroke:#8b95a3;stroke-width:1}
+#plan .flare{fill:none;stroke:#c9a0ff;stroke-width:1;stroke-dasharray:3 2}
+#plan .sheet{fill:none;stroke:#ff3030;stroke-width:1.2;stroke-dasharray:6 3}
+#plan .thin{fill:#ffa020;stroke:#ffa020;stroke-width:1.5}
+#plan .scale{stroke:#eee;stroke-width:1.5}
+#plan text{fill:#bbc4d0;font:4px system-ui}
+#plan text.small{font-size:3px}
+.legend{font-size:13px;color:#bbc4d0;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
+.sw{display:inline-block;width:14px;height:10px;margin-right:4px;vertical-align:middle;border-radius:2px}
+.sw.relief{background:#d4d8df}.sw.cavity{background:#93bad8;opacity:.7}.sw.pin{background:#93bad8}.sw.hole{background:#14171c;border:1px solid #8b95a3}
+.sw.flare{border:1px dashed #c9a0ff}.sw.safe{border:1px dashed #6b7785}.sw.sheet{border:1px dashed #ff3030}.sw.thin{background:#ffa020}
 @media (max-width:600px){body{margin:12px}input[type=number]{width:100%}section label,.row label{flex:1 1 140px}}
 </style>
 </head>
@@ -44,6 +62,7 @@ small,.note{color:#bbc4d0}
 <p id="presetNote" class="note"></p>
 <p id="printerNote" class="note"></p>
 <fieldset><legend>Matrici</legend><section id="params"></section></fieldset>
+<fieldset><legend>Piastra e guide</legend><section id="plateParams"></section></fieldset>
 <fieldset><legend>Stampa 3D</legend><section id="printParams"></section></fieldset>
 <div class="row">
 <label>Posizione<select id="align"><option value="center">Centro</option><option value="top">Alto</option><option value="bottom">Basso</option></select></label>
@@ -55,9 +74,12 @@ small,.note{color:#bbc4d0}
 <small>Contorno: rilievo nei vuoti interni delle sagome. Rettangolo: rilievo nei vuoti entro l’ingombro del disegno. Nei preset il risultato viene tagliato al perimetro rosso del foglio. Altezza disegno 0: scala dalla larghezza; altezza positiva: ulteriore limite, senza deformazione. Le impostazioni restano salvate in questo browser.</small>
 <div class="buttons"><button id="fit">Inquadra</button><button id="test">Test integrato</button><button id="reset">Valori predefiniti</button><button id="male" disabled>Esporta positiva STL</button><button id="female" disabled>Esporta negativa STL</button><button id="both" disabled>Esporta 3MF (entrambe sul piano)</button></div>
 <div id="view"></div>
+<h2>Pianta</h2>
+<div id="plan"></div>
+<p class="legend"><span><span class="sw relief"></span>rilievo</span><span><span class="sw cavity"></span>cavità</span><span><span class="sw pin"></span>perni</span><span><span class="sw hole"></span>fori guida</span><span><span class="sw flare"></span>svasatura</span><span><span class="sw safe"></span>margine di sicurezza</span><span><span class="sw sheet"></span>foglio</span><span><span class="sw thin"></span>troppo sottile</span></p>
 <p id="status" role="status" aria-live="polite">Carica un SVG con forme riempite.</p>
 <ul id="warnings" aria-live="polite"></ul>
-<small>Angoli piastra R6 mm. Tacca triangolare superiore di orientamento, specchiata sulla negativa per accoppiamento faccia a faccia. Il perimetro rosso è solo una guida e non viene esportato; in arancione le zone troppo sottili per l’ugello. Fori guida passanti. Serve Internet per le dipendenze CDN. Il controllo degli spigoli non rileva ogni possibile auto-intersezione: verificare anche nello slicer.</small>
+<small>Angoli, perni, tacca di orientamento e margine si regolano in «Piastra e guide»; la tacca è specchiata sulla negativa per l’accoppiamento faccia a faccia. Il perimetro rosso è solo una guida e non viene esportato; in arancione le zone troppo sottili per l’ugello. Fori guida passanti. Serve Internet per le dipendenze CDN. Il controllo degli spigoli non rileva ogni possibile auto-intersezione: verificare anche nello slicer.</small>
 </main>
 <script>
 window.addEventListener('error',function(event){var el=document.getElementById('status');if(el)el.textContent='Errore JavaScript: '+(event.message||'caricamento risorsa fallito')+(event.filename?' in '+event.filename.split('/').pop():'')+(event.lineno?' (riga '+event.lineno+')':'');});
@@ -74,6 +96,7 @@ window.addEventListener('error',function(event){var el=document.getElementById('
 <script src="js/export3mf.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/viewer.js"></script>
+<script src="js/plan.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

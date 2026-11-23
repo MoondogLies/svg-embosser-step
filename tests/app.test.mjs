@@ -286,6 +286,41 @@ test('una modifica rapida annulla il calcolo precedente e vince l’ultima', asy
   await context.close();
 });
 
+test('la pianta 2D mostra piastra e guide anche senza disegno, poi rilievo e cavità', async () => {
+  const { page, context, status } = await openApp();
+  await page.selectOption('#preset', 'custom');
+  const classes = () => page.$$eval('#plan svg path', (ps) => ps.map((p) => p.getAttribute('class')));
+  const pinPath = () => page.getAttribute('#plan path.pin', 'd');
+  let list = await classes();
+  for (const c of ['plate', 'safe', 'hole', 'pin']) assert.ok(list.includes(c), 'manca ' + c + ' senza disegno');
+  assert.ok(!list.includes('relief'));
+  const before = await pinPath();
+  await page.evaluate(() => { const y = document.getElementById('pinY'); y.value = '-10'; y.dispatchEvent(new Event('change')); });
+  assert.notEqual(await pinPath(), before, 'lo spostamento dei perni deve cambiare la pianta');
+  await loadSvg(page, svg('<rect x="10" y="10" width="80" height="80"/>'));
+  await waitStatus(page, DONE);
+  assert.match(await status(), /superano il controllo/, await status());
+  list = await classes();
+  for (const c of ['plate', 'safe', 'relief', 'hole', 'flare', 'cavity', 'pin']) assert.ok(list.includes(c), 'manca ' + c);
+  // Tacca disattivata e angoli vivi: la piastra diventa un rettangolo di 4 vertici per lato.
+  for (const [id, v] of [['notchD', '0'], ['cornerR', '0']])
+    await page.evaluate(([id, v]) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('change')); }, [id, v]);
+  await waitStatus(page, DONE);
+  const plate = await page.getAttribute('#plan path.plate', 'd');
+  assert.equal(plate.split('Z').filter(Boolean).every((loop) => loop.split('L').length === 4), true, plate);
+  await context.close();
+});
+
+test('valori negativi solo per lo spostamento verticale dei perni', async () => {
+  const { page, context, status } = await openApp();
+  await page.evaluate(() => { const el = document.getElementById('pinInset'); el.value = '-3'; el.dispatchEvent(new Event('change')); });
+  assert.match(await status(), /«Distanza centro perni dal bordo laterale \[mm\]» non può essere negativo/);
+  await page.evaluate(() => { const el = document.getElementById('pinInset'); el.value = '7'; el.dispatchEvent(new Event('change')); });
+  await page.evaluate(() => { const el = document.getElementById('pinY'); el.value = '-5'; el.dispatchEvent(new Event('change')); });
+  assert.doesNotMatch(await status(), /Errore/);
+  await context.close();
+});
+
 test('i messaggi d’errore usano il nome del campo', async () => {
   const { page, context, status } = await openApp();
   const set = (v) => page.evaluate((v) => { const w = document.getElementById('w'); w.value = v; w.dispatchEvent(new Event('change')); }, v);

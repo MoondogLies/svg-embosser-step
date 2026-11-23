@@ -72,11 +72,11 @@
   function settings() {
     const s = {};
     for (const [id] of E.PARAMS) $(id).removeAttribute('aria-invalid');
-    for (const [id] of E.PARAMS) {
+    for (const [id, , , , , flags] of E.PARAMS) {
       const raw = $(id).value.trim();
       s[id] = Number(raw);
       if (raw === '' || !Number.isFinite(s[id])) throw invalid(id, 'Valore mancante o non numerico in ' + fieldName(id) + '.');
-      if (s[id] < 0) throw invalid(id, 'Il valore di ' + fieldName(id) + ' non può essere negativo.');
+      if (s[id] < 0 && !(flags && flags.negative)) throw invalid(id, 'Il valore di ' + fieldName(id) + ' non può essere negativo.');
     }
     for (const id of ['w', 'h', 'b', 'r', 'aw', 'pin', 'ph'])
       if (s[id] <= 0) throw invalid(id, 'Il valore di ' + fieldName(id) + ' deve essere maggiore di zero.');
@@ -98,6 +98,16 @@
     scaleMode: $('scaleMode').value,
   });
 
+  // Pianta della sola piastra (senza disegno) oppure vuota se i parametri non sono validi.
+  function showPlatePlan() {
+    try {
+      const s = settings();
+      E.renderPlan($('plan'), { s, sheet: activeSheet(), plan: E.platePlan(s, $('mirror').checked) });
+    } catch (ignore) {
+      E.renderPlan($('plan'), null);
+    }
+  }
+
   function fail(e) {
     setExports(false);
     models = [];
@@ -109,6 +119,7 @@
         viewer.sheet(settings(), activeSheet());
       } catch (ignore) {}
     }
+    showPlatePlan();
     status('Errore: ' + e.message);
     console.error(e);
   }
@@ -134,6 +145,7 @@
       viewer.sheet(s, activeSheet());
       if (viewer.count) viewer.fit();
       setWarnings([]);
+      showPlatePlan();
       status(V + ': carica un SVG. Il perimetro rosso indica il foglio e non viene esportato.');
       return;
     }
@@ -165,6 +177,7 @@
     viewer.sheet(s, opts.sheet);
     viewer.thin(r.thin.positive, -s.w / 2 - 8, H.b + H.r + 0.06);
     viewer.thin(r.thin.negative, s.w / 2 + 8, H.b + 0.06);
+    E.renderPlan($('plan'), { s, sheet: opts.sheet, plan: r.plan, thin: r.thin });
     if (!fitted) {
       viewer.fit();
       fitted = true;
@@ -319,13 +332,15 @@
   }
 
   function start() {
-    for (const [id, title, value, step, group] of E.PARAMS) {
+    const groups = { main: 'params', print: 'printParams', plate: 'plateParams' };
+    for (const [id, title, value, step, group, flags] of E.PARAMS) {
       const label = document.createElement('label'),
         input = document.createElement('input');
       label.textContent = title;
-      Object.assign(input, { type: 'number', id, value, step: String(step), min: '0' });
+      Object.assign(input, { type: 'number', id, value, step: String(step) });
+      if (!(flags && flags.negative)) input.min = '0';
       label.append(input);
-      $(group === 'print' ? 'printParams' : 'params').append(label);
+      $(groups[group]).append(label);
     }
     for (const [id, printer] of Object.entries(E.PRINTERS)) $('printer').append(new Option(printer.name, id));
     $('printer').value = 'a1';

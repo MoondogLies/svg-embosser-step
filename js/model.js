@@ -21,7 +21,7 @@
       sheet = opts.sheet || null;
     let cy = 0;
     const areaH = sheet ? sheet.h : s.h,
-      margin = sheet ? 0 : 3;
+      margin = sheet ? 0 : G.plateGeometry(s).margin + 1;
     if (opts.align === 'top') cy = areaH / 2 - margin - height / 2;
     if (opts.align === 'bottom') cy = -areaH / 2 + margin + height / 2;
     const convert = (p) => ({ X: Math.round((p.x - d.minX - sw / 2) * k * S), Y: Math.round((-(p.y - d.minY - sh / 2) * k + cy) * S) });
@@ -48,7 +48,7 @@
     if (!sheet) return;
     const region = [rect(0, 0, sheet.w, sheet.h)];
     if (s.w < sheet.w || s.h < sheet.h) throw Error('La piastra deve contenere il foglio ' + sheet.w + ' × ' + sheet.h + ' mm.');
-    const innerEdge = s.w / 2 - 7 - (s.pin + 2 * s.pg) / 2;
+    const innerEdge = s.w / 2 - G.plateGeometry(s).pinInset - (s.pin + 2 * s.pg) / 2 - (s.holeFlare || 0);
     if (innerEdge <= sheet.w / 2)
       throw Error('Perni o fori troppo vicini al foglio: aumenta la larghezza della piastra o riduci le guide.');
     if (intersect([...pins, ...pockets], region).length) throw Error('Perni o fori entrano nel foglio.');
@@ -92,18 +92,28 @@
       negativePlate = mirrored ? reflected(plate) : plate,
       placed = artwork(source, opts),
       art = placed.paths,
-      px = s.w / 2 - 7,
+      geo = G.plateGeometry(s),
+      px = s.w / 2 - geo.pinInset,
+      py = geo.pinY,
       warnings = [];
     if (!((s.draft || 0) >= 0 && (s.draft || 0) < 60)) throw Error('L’inclinazione delle pareti deve essere tra 0° e 60°.');
     if (H.L && (H.L < 0.04 || H.L > 0.4)) throw Error('Altezza layer fuori intervallo: usa 0 oppure un valore tra 0,04 e 0,4 mm.');
-    if (px - s.pin / 2 <= 0 || s.pin + 2 * s.pg >= s.h - 4) throw Error('Perni troppo grandi.');
+    if (!(geo.cornerR >= 0) || geo.cornerR > Math.min(s.w, s.h) / 2) throw Error('Raggio degli angoli troppo grande: massimo metà del lato corto della piastra.');
+    if (geo.notchD > 0 && geo.notchW > 0) {
+      const left = geo.notchX - ((geo.notchW / 2) * (geo.notchD + 1)) / geo.notchD,
+        right = geo.notchX + ((geo.notchW / 2) * (geo.notchD + 1)) / geo.notchD;
+      if (left < geo.cornerR || right > s.w - geo.cornerR) throw Error('La tacca deve stare sul lato dritto superiore, fuori dagli angoli arrotondati.');
+      if (geo.notchD >= s.h / 2) throw Error('Tacca troppo profonda.');
+    }
+    if (px - s.pin / 2 - s.pg <= 0) throw Error('Perni troppo vicini al centro: riduci la distanza dei perni dal bordo o allarga la piastra.');
+    if (Math.abs(py) + s.pin / 2 + s.pg >= s.h / 2) throw Error('Perni troppo grandi o troppo spostati in verticale.');
     if (s.pinChamfer >= H.ph || s.pinChamfer >= s.pin / 2) throw Error('Smusso dei perni troppo grande rispetto a lato e altezza dei perni.');
     if (opts.bed && (s.w > opts.bed.w || s.h > opts.bed.h))
       throw Error('La piastra ' + s.w + ' × ' + s.h + ' mm non entra nel piano di stampa ' + opts.bed.w + ' × ' + opts.bed.h + ' mm.');
-    const pins = union([-1, 1].map((v) => rect(v * px, 0, s.pin, s.pin))),
-      pockets = union([-1, 1].map((v) => rect(v * px, 0, s.pin + 2 * s.pg, s.pin + 2 * s.pg))),
+    const pins = union([-1, 1].map((v) => rect(v * px, py, s.pin, s.pin))),
+      pockets = union([-1, 1].map((v) => rect(v * px, py, s.pin + 2 * s.pg, s.pin + 2 * s.pg))),
       flared = s.holeFlare > 0 ? offset(pockets, s.holeFlare) : pockets,
-      safe = offset(plate, -2),
+      safe = offset(plate, -geo.margin),
       negativeSafe = mirrored ? reflected(safe) : safe;
     validateSheet(s, opts.sheet, pins, flared);
     if (diff(flared, plate).length || diff(pins, negativePlate).length) throw Error('Guide fuori dalla piastra arrotondata o nella tacca.');
@@ -181,7 +191,12 @@
     if (H.L && Math.abs(H.r - s.r) > 1e-6) warnings.push('Altezza rilievo arrotondata a ' + H.r.toFixed(2) + ' mm (multiplo del layer).');
     if (H.L && Math.abs(H.b - s.b) > 1e-6) warnings.push('Spessore piastra arrotondato a ' + H.b.toFixed(2) + ' mm.');
     if (H.L && Math.abs(H.ph - s.ph) > 1e-6) warnings.push('Altezza perni arrotondata a ' + H.ph.toFixed(2) + ' mm.');
-    return { positive, negative, depth, heights: H, art, pins, pockets, cut: placed.cut, size: placed.size, warnings, thin };
+    // Contorni 2D per l'anteprima in pianta (negativa vista dall'alto, già specchiata se richiesto).
+    const plan = {
+      positive: { plate, safe, relief: art, holes: pockets, flare: s.holeFlare > 0 ? flared : [] },
+      negative: { plate: negativePlate, safe: negativeSafe, cavity, pins },
+    };
+    return { positive, negative, depth, heights: H, art, pins, pockets, cut: placed.cut, size: placed.size, warnings, thin, plan };
   }
 
   // Test geometrici e di mesh. sources: { frame, full } già interpretati dalla pagina (il parsing SVG richiede il DOM).
@@ -260,6 +275,41 @@
       check(r.negative, 'Contorni allineati negativa');
       count += 2;
     }
+    // Piastra e guide configurabili.
+    {
+      const custom = { ...card.values, cornerR: 0, notchD: 0, pinInset: 10, pinY: 12, margin: 3 };
+      const r = build(sources.full, opts({ ...custom, aw: 80 }, 'original', { sheet }));
+      check(r.positive, 'Piastra personalizzata positiva');
+      check(r.negative, 'Piastra personalizzata negativa');
+      count += 2;
+      const plateArea = G.area(G.plateShape(custom));
+      if (Math.abs(plateArea - custom.w * custom.h) > 1e-6) throw Error('Piastra senza raggio e senza tacca errata: area ' + plateArea);
+      const ys = r.pins.flat().map((q) => q.Y / S),
+        xs = r.pins.flat().map((q) => q.X / S);
+      if (Math.abs((Math.min(...ys) + Math.max(...ys)) / 2 - 12) > 1e-6 || Math.abs(Math.max(...xs) - (custom.w / 2 - 10 + custom.pin / 2)) > 1e-6)
+        throw Error('Posizione dei perni non applicata.');
+      for (const [bad, pattern] of [
+        [{ notchX: 3 }, /lato dritto/],
+        [{ cornerR: 40 }, /Raggio degli angoli/],
+        [{ pinY: 34 }, /spostati in verticale/],
+        [{ pinInset: 70 }, /troppo vicini al centro/],
+      ]) {
+        let refused = false;
+        try {
+          build(sources.full, opts({ ...card.values, aw: 80, ...bad }, 'original', { sheet }));
+        } catch (e) {
+          refused = pattern.test(e.message);
+        }
+        if (!refused) throw Error('Geometria non valida accettata: ' + JSON.stringify(bad));
+      }
+      // I valori predefiniti riproducono la piastra storica (R6, tacca a 12 mm larga 4 mm sul bordo e profonda 2 mm).
+      const x = -card.values.w / 2 + 12,
+        y = card.values.h / 2,
+        historic = diff(union([G.roundedRect(card.values.w, card.values.h, 6)]), [
+          [{ X: Math.round((x - 3) * S), Y: Math.round((y + 1) * S) }, { X: Math.round((x + 3) * S), Y: Math.round((y + 1) * S) }, { X: Math.round(x * S), Y: Math.round((y - 2) * S) }],
+        ]);
+      if (!same(G.plateShape(card.values), historic)) throw Error('Piastra predefinita diversa da quella storica.');
+    }
     // Profilo stampante A1: quote a layer, pareti inclinate, perni smussati, fori svasati.
     const a1 = { ...card.values, ...E.PRINTERS.a1.values },
       bed = E.PRINTERS.a1.bed;
@@ -310,6 +360,9 @@
         size: r.size,
         warnings: r.warnings,
         thin: { positive: loops(r.thin.positive), negative: loops(r.thin.negative) },
+        plan: Object.fromEntries(
+          Object.entries(r.plan).map(([side, layers]) => [side, Object.fromEntries(Object.entries(layers).map(([k, paths]) => [k, loops(paths)]))]),
+        ),
       };
     },
     selftest: (sources) => selfTest(sources),

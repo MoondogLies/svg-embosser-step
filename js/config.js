@@ -1,11 +1,11 @@
 // Configurazione condivisa tra pagina e worker: revisione, parametri e preset.
 'use strict';
 (function (E) {
-  E.VERSION = 'print-1';
+  E.VERSION = 'plan-1';
   // Fattore di scala mm → interi per Clipper (risoluzione 0,0001 mm).
   E.S = 10000;
 
-  // [id, etichetta, valore iniziale, passo, gruppo]
+  // [id, etichetta, valore iniziale, passo, gruppo, { negative: ammette valori negativi }]
   E.PARAMS = [
     ['w', 'Larghezza piastra [mm]', 100, 0.5, 'main'],
     ['h', 'Altezza piastra [mm]', 70, 0.5, 'main'],
@@ -19,6 +19,13 @@
     ['pin', 'Lato perni [mm]', 5, 0.1, 'main'],
     ['ph', 'Altezza perni [mm]', 4, 0.1, 'main'],
     ['pg', 'Gioco per lato perni [mm]', 0.3, 0.01, 'main'],
+    ['cornerR', 'Raggio angoli piastra [mm]', 6, 0.5, 'plate'],
+    ['margin', 'Margine di sicurezza dal bordo [mm]', 2, 0.5, 'plate'],
+    ['pinInset', 'Distanza centro perni dal bordo laterale [mm]', 7, 0.5, 'plate'],
+    ['pinY', 'Spostamento verticale perni [mm] (+ in alto)', 0, 0.5, 'plate', { negative: true }],
+    ['notchX', 'Posizione tacca dal bordo sinistro [mm]', 12, 0.5, 'plate'],
+    ['notchW', 'Larghezza tacca sul bordo [mm]', 4, 0.5, 'plate'],
+    ['notchD', 'Profondità tacca [mm], 0 = senza tacca', 2, 0.5, 'plate'],
     ['layer', 'Altezza layer [mm], 0 = quote libere', 0, 0.02, 'print'],
     ['draft', 'Inclinazione pareti rilievo [°]', 0, 1, 'print'],
     ['pinChamfer', 'Smusso punta perni [mm]', 0, 0.04, 'print'],
