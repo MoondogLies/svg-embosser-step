@@ -39,6 +39,9 @@ h2{font-size:1.15em;margin:16px 0 6px}
 #plan .flare{fill:none;stroke:#c9a0ff;stroke-width:1;stroke-dasharray:3 2}
 #plan .sheet{fill:none;stroke:#ff3030;stroke-width:1.2;stroke-dasharray:6 3}
 #plan .thin{fill:#ffa020;stroke:#ffa020;stroke-width:1.5}
+#plan .stop{fill:#f4c26b;stroke:#ffe2a8;stroke-width:1}
+#plan .recess{fill:#14171c;stroke:#f4c26b;stroke-width:1;stroke-dasharray:3 2}
+.sw.stop{background:#f4c26b}.sw.recess{background:#14171c;border:1px dashed #f4c26b}
 #plan .scale{stroke:#eee;stroke-width:1.5}
 #plan text{fill:#bbc4d0;font:4px system-ui}
 #plan text.small{font-size:3px}
@@ -66,7 +69,7 @@ dialog .note{margin:6px 12px}
 <p>Positiva a sinistra, negativa a destra. Trascina per ruotare; rotella per zoomare.</p>
 <div id="drop"><label>File SVG (puoi anche trascinarlo qui)<input id="file" type="file" accept=".svg,image/svg+xml"></label></div>
 <div class="row">
-<label>Preset<select id="preset"><option value="custom">Personalizzato</option><option value="businessCard">Biglietto da visita 85 × 55 mm</option></select></label>
+<label>Preset<select id="preset"><option value="custom">Personalizzato</option><option value="businessCard">Biglietto da visita 85 × 55 mm</option><option value="jCard">J card musicassetta – fronte 101,6 × 63,5 mm</option></select></label>
 <label>Stampante<select id="printer"></select></label>
 <label>Scala del disegno<select id="scaleMode"><option value="fit">Da larghezza/altezza disegno</option><option value="file">Dimensioni reali del file SVG</option></select></label>
 </div>
@@ -74,6 +77,7 @@ dialog .note{margin:6px 12px}
 <p id="printerNote" class="note"></p>
 <fieldset><legend>Matrici</legend><section id="params"></section></fieldset>
 <fieldset><legend>Piastra e guide</legend><section id="plateParams"></section></fieldset>
+<fieldset><legend>Battute di riscontro</legend><div class="row"><label>Battute<select id="stops"><option value="none">Nessuna</option><option value="bottom">Angoli inferiori (L)</option><option value="corners">Quattro angoli (L)</option></select></label></div><p id="stopsNote" class="note">Rilievi a «L» sulla positiva, appena fuori dal foglio, contro cui appoggiare la carta; sulla negativa ci sono le sedi corrispondenti. Disponibili solo con un preset che definisce il foglio.</p><section id="stopParams"></section></fieldset>
 <fieldset><legend>Stampa 3D</legend><section id="printParams"></section></fieldset>
 <div class="row">
 <label>Posizione<select id="align"><option value="center">Centro</option><option value="top">Alto</option><option value="bottom">Basso</option></select></label>
@@ -87,7 +91,7 @@ dialog .note{margin:6px 12px}
 <div id="view"></div>
 <h2>Pianta</h2>
 <div id="plan"></div>
-<p class="legend"><span><span class="sw relief"></span>rilievo</span><span><span class="sw cavity"></span>cavità</span><span><span class="sw pin"></span>perni</span><span><span class="sw hole"></span>fori guida</span><span><span class="sw flare"></span>svasatura</span><span><span class="sw safe"></span>margine di sicurezza</span><span><span class="sw sheet"></span>foglio</span><span><span class="sw thin"></span>troppo sottile</span></p>
+<p class="legend"><span><span class="sw relief"></span>rilievo</span><span><span class="sw cavity"></span>cavità</span><span><span class="sw pin"></span>perni</span><span><span class="sw hole"></span>fori guida</span><span><span class="sw flare"></span>svasatura</span><span><span class="sw stop"></span>battute</span><span><span class="sw recess"></span>sedi battute</span><span><span class="sw safe"></span>margine di sicurezza</span><span><span class="sw sheet"></span>foglio</span><span><span class="sw thin"></span>troppo sottile</span></p>
 <h2>Foglio goffrato</h2>
 <div id="sheetBox"><canvas id="sheetPreview" aria-label="Anteprima del foglio goffrato con luce radente"></canvas></div>
 <div class="buttons"><button id="sheet3d" disabled>Apri il foglio in 3D</button></div>

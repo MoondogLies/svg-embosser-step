@@ -1,7 +1,7 @@
 // Configurazione condivisa tra pagina e worker: revisione, parametri e preset.
 'use strict';
 (function (E) {
-  E.VERSION = 'foglio-1';
+  E.VERSION = 'jcard-1';
   // Fattore di scala mm → interi per Clipper (risoluzione 0,0001 mm).
   E.S = 10000;
 
@@ -26,6 +26,11 @@
     ['notchX', 'Posizione tacca dal bordo sinistro [mm]', 12, 0.5, 'plate'],
     ['notchW', 'Larghezza tacca sul bordo [mm]', 4, 0.5, 'plate'],
     ['notchD', 'Profondità tacca [mm], 0 = senza tacca', 2, 0.5, 'plate'],
+    ['stopLen', 'Lunghezza bracci battute [mm]', 10, 0.5, 'stops'],
+    ['stopW', 'Spessore battute [mm]', 2, 0.1, 'stops'],
+    ['stopH', 'Altezza battute [mm]', 1.2, 0.04, 'stops'],
+    ['stopGap', 'Distanza battute dal foglio [mm]', 0.2, 0.05, 'stops'],
+    ['stopClear', 'Gioco sedi battute sulla negativa [mm]', 0.3, 0.05, 'stops'],
     ['layer', 'Altezza layer [mm], 0 = quote libere', 0, 0.02, 'print'],
     ['draft', 'Inclinazione pareti rilievo [°]', 0, 1, 'print'],
     ['pinChamfer', 'Smusso punta perni [mm]', 0, 0.04, 'print'],
@@ -57,6 +62,19 @@
       values: { w: 130, h: 70, b: 4, r: 0.8, paper: 0.12, vertical: 0.1, lateral: 0.15, aw: 85, ah: 0, pin: 5, ph: 4, pg: 0.3 },
       align: 'center',
       sheet: { w: 85, h: 55 },
+    },
+    jCard: {
+      note:
+        'J card per musicassetta: si goffra solo il pannello frontale 101,6 × 63,5 mm (4" × 2,5"), con il dorso sul lato superiore. ' +
+        'Piastra 130 × 80 mm; dorso e aletta escono liberi oltre il bordo superiore, quindi le battute sono solo agli angoli inferiori. ' +
+        'Valori per cartoncino 250–300 g/m² (circa 0,3 mm: misuralo): rilievo 0,64 mm, gioco laterale 0,4 mm, pareti a 20°. ' +
+        'Tieni il disegno ad almeno 3 mm da bordi e piega; goffra prima di cordonare e piegare. Verifica le misure sul template del tuo stampatore.',
+      values: { w: 130, h: 80, b: 4, r: 0.64, paper: 0.3, vertical: 0.1, lateral: 0.4, aw: 95.6, ah: 0, pin: 5, ph: 4, pg: 0.3 },
+      // Valori del materiale: hanno la precedenza anche sul profilo stampante.
+      material: { paper: 0.3, lateral: 0.4, r: 0.64, draft: 20, minFeature: 1 },
+      align: 'center',
+      stops: 'bottom',
+      sheet: { w: 101.6, h: 63.5, inset: 3, overhang: 'top' },
     },
   };
 })((self.Embosser = self.Embosser || {}));

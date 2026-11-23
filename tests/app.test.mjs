@@ -352,6 +352,41 @@ test('anteprima del foglio goffrato e finestra 3D coerenti con il preset', async
   await context.close();
 });
 
+test('preset J card: cartoncino, battute agli angoli inferiori, sedi e avvisi', async () => {
+  const { page, context, status, errors } = await openApp();
+  await page.selectOption('#preset', 'jCard');
+  // I valori del cartoncino prevalgono sul profilo A1.
+  assert.equal(await page.inputValue('#paper'), '0.3');
+  assert.equal(await page.inputValue('#lateral'), '0.4');
+  assert.equal(await page.inputValue('#draft'), '20');
+  assert.equal(await page.inputValue('#stops'), 'bottom');
+  assert.equal(await page.isDisabled('#stops'), false);
+  // Battute visibili in pianta già prima del disegno.
+  assert.equal(await page.locator('#plan path.stop').count(), 1);
+  await loadSvg(page, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 62"><path fill-rule="evenodd" d="M5 5H95V57H5Z M10 10H90V52H10Z"/><circle cx="50" cy="31" r="12"/></svg>`);
+  await waitStatus(page, DONE);
+  const text = await status();
+  assert.match(text, /superano il controllo/, text);
+  assert.match(text, /Battute di riscontro agli angoli inferiori, alte 1\.12 mm, sedi sulla negativa profonde 1\.28 mm/, text);
+  assert.match(await page.textContent('#sheetNote'), /Foglio 101\.6 × 63\.5 mm del preset/);
+  assert.equal(await page.locator('#plan path.stop').count(), 1);
+  assert.equal(await page.locator('#plan path.recess').count(), 1);
+  // Quattro angoli: avviso sul dorso della J card.
+  await page.selectOption('#stops', 'corners');
+  await waitStatus(page, DONE);
+  assert.match(await page.textContent('#warnings'), /dorso della J card urta le battute superiori/);
+  // Nessuna battuta: niente sedi, campi disattivati.
+  await page.selectOption('#stops', 'none');
+  await waitStatus(page, DONE);
+  assert.equal(await page.locator('#plan path.stop').count(), 0);
+  assert.equal(await page.isDisabled('#stopW'), true);
+  // Preset senza foglio: battute non disponibili.
+  await page.selectOption('#preset', 'custom');
+  assert.equal(await page.isDisabled('#stops'), true);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('valori negativi solo per lo spostamento verticale dei perni', async () => {
   const { page, context, status } = await openApp();
   await page.evaluate(() => { const el = document.getElementById('pinInset'); el.value = '-3'; el.dispatchEvent(new Event('change')); });

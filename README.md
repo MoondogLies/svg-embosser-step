@@ -21,6 +21,8 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Perni sulla negativa e fori guida passanti sulla positiva.
 - Opzione per specchiare la negativa per l’accoppiamento faccia a faccia.
 - Piastre con angoli arrotondati e tacca triangolare di orientamento sul bordo superiore (specchiata sulla negativa quando è attiva la specchiatura); raggio, tacca, posizione dei perni e margine sono regolabili.
+- Preset **J card per musicassetta** (pannello frontale 101,6 × 63,5 mm) con valori per cartoncino.
+- **Battute di riscontro** a «L» sulla positiva, con sedi sulla negativa, per posizionare la carta in modo ripetibile.
 - Anteprima del **foglio goffrato** sul formato del preset (o sull’ingombro del disegno), sempre visibile, e finestra con il foglio in 3D orbitabile.
 - Pianta 2D di positiva e negativa viste dall’alto, con rilievo, cavità, perni, fori, svasatura, margine, foglio e zone troppo sottili; visibile anche prima di caricare il disegno.
 - Preset con formato del foglio, ad esempio biglietto da visita 85 × 55 mm, con ritaglio del disegno al perimetro del foglio.
@@ -150,6 +152,33 @@ profondità = altezza rilievo + spessore carta + gioco verticale
 
 L’app blocca la generazione se questa profondità è maggiore o uguale allo spessore della piastra meno 0,4 mm. Controlla anche che il disegno e la cavità non superino i margini o interferiscano con le guide. Questi controlli non garantiscono la resistenza meccanica o la compatibilità con ogni pressa.
 
+
+### J card per musicassetta
+
+Il preset **J card musicassetta** goffra solo il **pannello frontale** di 101,6 × 63,5 mm (4" × 2,5"), con il dorso sul lato superiore. Le misure sono quelle standard: verificale sul template del tuo stampatore e, se diverse, modifica il preset in `js/config.js`.
+
+- Piastra 130 × 80 mm: dorso e aletta escono liberi oltre il bordo superiore della piastra. Sulla A1 le due piastre vanno in colonna nel 3MF.
+- Valori per cartoncino da 250–300 g/m² (circa 0,3 mm; misuralo con il calibro): rilievo 0,64 mm, gioco laterale 0,4 mm, pareti a 20°, dettaglio minimo 1 mm. Questi valori prevalgono anche su quelli del profilo stampante.
+- Battute di riscontro agli **angoli inferiori**, così il dorso non incontra ostacoli.
+- Avviso se il disegno arriva a meno di 3 mm dal bordo o dalla piega del dorso.
+- Ordine consigliato: stampa → goffratura → cordonatura e piega.
+- Prima di stampare le matrici definitive, prova che la custodia si chiuda con la J card goffrata: tra fronte e coperchio lo spazio è poco.
+
+## Battute di riscontro
+
+Con un preset che definisce il foglio, le battute sono piccoli rilievi a «L» sulla positiva, appena fuori dagli angoli del foglio: la carta si appoggia contro di esse, così la goffratura cade sempre nello stesso punto (indispensabile se deve combaciare con una grafica stampata). Sulla negativa ci sono le sedi corrispondenti, allargate del gioco e profonde quanto basta perché le matrici si chiudano.
+
+| Parametro | Predefinito | Effetto |
+| --- | --- | --- |
+| Battute | J card: angoli inferiori; altri preset: nessuna | **Angoli inferiori**: due L in basso; **Quattro angoli**: quattro L. Non disponibili senza foglio. |
+| Lunghezza bracci | 10 mm | Lunghezza di ciascun braccio lungo il bordo del foglio. |
+| Spessore battute | 2 mm | Larghezza dei bracci. |
+| Altezza battute | 1,2 mm | Arrotondata a multipli del layer (con la A1: 1,12 mm); deve superare lo spessore della carta. |
+| Distanza dal foglio | 0,2 mm | Gioco tra carta e battuta. |
+| Gioco sedi sulla negativa | 0,3 mm | Allargamento delle sedi; profondità = altezza battute + gioco verticale, arrotondata per eccesso al layer. |
+
+L’app rifiuta battute fuori dalla piastra o nella tacca, sovrapposte ai fori guida o con sedi sopra i perni, e avvisa se con la J card scegli i quattro angoli (il dorso urterebbe le battute superiori). Battute e sedi compaiono nella pianta, nell’anteprima 3D e nei file esportati.
+
 ## Preparare l’SVG
 
 - Usa forme vettoriali riempite. Un’area riempita diventa un rilievo sulla positiva e una cavità sulla negativa.
@@ -185,6 +214,7 @@ Il pulsante **Test integrato** esegue nel browser una serie di controlli, senza 
 - molti contorni con il fondo allineato sulla stessa retta, senza e con profilo A1;
 - profilo A1: quote multiple del layer, effetto dell’inclinazione sui volumi, rifiuto di piastre oltre il piano, rilevamento di parti sottili e fessure strette;
 - preset biglietto da visita: ritaglio al foglio, guide fuori dal foglio, angoli R6, tacca e specchiatura;
+- preset J card con battute agli angoli inferiori e ai quattro angoli, posizione delle battute, sedi, quote a layer, rifiuto delle battute sovrapposte ai fori e avvisi su piega e dorso;
 - simulazione del foglio: altezze al centro e agli angoli, piega sul bordo, fori del rilievo piatti, foglio senza preset;
 - piastra e guide personalizzate (angoli vivi, senza tacca, perni spostati), rifiuto delle geometrie non valide e coincidenza dei valori predefiniti con la piastra storica;
 - controllo di spigoli e volume su tutte le mesh generate.
@@ -192,10 +222,10 @@ Il pulsante **Test integrato** esegue nel browser una serie di controlli, senza 
 L’esito atteso inizia con:
 
 ```text
-Test superato: 68 mesh controllate.
+Test superato: 74 mesh controllate.
 ```
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `foglio-1` nel messaggio di stato.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `jcard-1` nel messaggio di stato.
 
 ## File esportati
 
@@ -241,7 +271,7 @@ npx playwright install chromium
 npm test
 ```
 
-Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, l’anteprima e la finestra 3D del foglio, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
+Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, l’anteprima e la finestra 3D del foglio, il preset J card e le battute di riscontro, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
 
 ## GitHub Pages
 

@@ -5,7 +5,7 @@
   const V = E.VERSION;
   const STORE = 'embosser-settings-v1';
   const CHECKS = ['invert', 'mirror', 'strokes'];
-  const SELECTS = ['preset', 'printer', 'scaleMode', 'align', 'invertArea'];
+  const SELECTS = ['preset', 'printer', 'scaleMode', 'align', 'invertArea', 'stops'];
 
   let source = null,
     sourceText = null,
@@ -22,6 +22,8 @@
     const p = E.PRESETS[$('preset').value];
     return (p && p.sheet) || null;
   };
+  // Battute solo se il preset definisce un foglio.
+  const activeStops = () => (activeSheet() ? $('stops').value : 'none');
   const activePrinter = () => E.PRINTERS[$('printer').value] || E.PRINTERS.none;
   const fieldName = (id) => {
     const d = E.PARAMS.find((x) => x[0] === id);
@@ -98,13 +100,14 @@
     sheet: activeSheet(),
     bed: activePrinter().bed || null,
     scaleMode: $('scaleMode').value,
+    stops: activeStops(),
   });
 
   // Pianta della sola piastra (senza disegno) oppure vuota se i parametri non sono validi.
   function showPlatePlan() {
     try {
       const s = settings();
-      E.renderPlan($('plan'), { s, sheet: activeSheet(), plan: E.platePlan(s, $('mirror').checked) });
+      E.renderPlan($('plan'), { s, sheet: activeSheet(), plan: E.platePlan(s, $('mirror').checked, activeSheet(), activeStops()) });
     } catch (ignore) {
       E.renderPlan($('plan'), null);
     }
@@ -172,6 +175,10 @@
 
   function syncControls() {
     $('invertArea').disabled = !$('invert').checked;
+    const sheet = !!activeSheet();
+    $('stops').disabled = !sheet;
+    const stopFields = sheet && $('stops').value !== 'none';
+    for (const [id, , , , group] of E.PARAMS) if (group === 'stops') $(id).disabled = !stopFields;
     const file = $('scaleMode').value === 'file';
     $('aw').disabled = $('ah').disabled = file;
   }
@@ -246,7 +253,8 @@
         (r.cut ? ' Disegno tagliato al perimetro del foglio.' : '') +
         (s.draft ? ' Pareti inclinate di ' + s.draft + '°.' : '') +
         ' Fori guida ' + (s.pin + 2 * s.pg).toFixed(2) + ' mm' + (s.holeFlare ? ', svasati di ' + s.holeFlare + ' mm alla base' : '') +
-        (s.pinChamfer ? '; perni smussati di ' + s.pinChamfer + ' mm' : '') + '.',
+        (s.pinChamfer ? '; perni smussati di ' + s.pinChamfer + ' mm' : '') + '.' +
+        (H.stopH ? ' Battute di riscontro ' + ({ bottom: 'agli angoli inferiori', corners: 'ai quattro angoli' }[opts.stops] || '') + ', alte ' + mm(H.stopH) + ' mm, sedi sulla negativa profonde ' + mm(H.recessDepth) + ' mm.' : ''),
     );
   }
 
@@ -292,6 +300,9 @@
     const printer = activePrinter();
     $('printerNote').textContent = printer.note || '';
     if (printer.values) for (const [id, value] of Object.entries(printer.values)) $(id).value = value;
+    // I valori del materiale del preset (es. cartoncino della J card) prevalgono sul profilo stampante.
+    const preset = E.PRESETS[$('preset').value] || {};
+    if (preset.material) for (const [id, value] of Object.entries(preset.material)) $(id).value = value;
   }
 
   function applyPreset() {
@@ -302,6 +313,7 @@
       for (const [id, value] of Object.entries(p.values)) $(id).value = value;
       if (p.align) $('align').value = p.align;
     }
+    if (p.stops) $('stops').value = p.stops;
     applyPrinterValues(); // il profilo stampante ha la precedenza sui valori del preset
     fitted = false;
     save();
@@ -368,7 +380,7 @@
       status(
         'Test superato: ' + count + ' mesh controllate. Verificati fill-rule, stili CSS, stroke, dimensioni reali, defs inutilizzati, clipping, ' +
           'input Clipper, inversioni, centro decentrato, piastre R6, tacca specchiata, guide esterne, quote a layer, pareti inclinate, ' +
-          'piano di stampa, dettagli sottili e simulazione del foglio. Disegno e parametri utente conservati.',
+          'piano di stampa, dettagli sottili, battute di riscontro e simulazione del foglio. Disegno e parametri utente conservati.',
       );
     } catch (e) {
       if (e && e.cancelled) return;
@@ -382,7 +394,7 @@
   }
 
   function start() {
-    const groups = { main: 'params', print: 'printParams', plate: 'plateParams' };
+    const groups = { main: 'params', print: 'printParams', plate: 'plateParams', stops: 'stopParams' };
     for (const [id, title, value, step, group, flags] of E.PARAMS) {
       const label = document.createElement('label'),
         input = document.createElement('input');
@@ -419,7 +431,7 @@
       generate();
     };
     for (const [id] of E.PARAMS) $(id).onchange = changed;
-    for (const id of ['align', 'mirror', 'invert', 'invertArea', 'scaleMode']) $(id).onchange = changed;
+    for (const id of ['align', 'mirror', 'invert', 'invertArea', 'scaleMode', 'stops']) $(id).onchange = changed;
     $('strokes').onchange = reparse;
     $('preset').onchange = applyPreset;
     $('printer').onchange = applyPrinter;

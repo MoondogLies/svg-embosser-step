@@ -24,8 +24,8 @@
 
   // Strati disegnati dal basso verso l'alto: [chiave, classe CSS].
   const LAYERS = {
-    positive: [['plate', 'plate'], ['safe', 'safe'], ['relief', 'relief'], ['flare', 'flare'], ['holes', 'hole']],
-    negative: [['plate', 'plate'], ['safe', 'safe'], ['cavity', 'cavity'], ['pins', 'pin']],
+    positive: [['plate', 'plate'], ['safe', 'safe'], ['relief', 'relief'], ['flare', 'flare'], ['holes', 'hole'], ['stops', 'stop']],
+    negative: [['plate', 'plate'], ['safe', 'safe'], ['cavity', 'cavity'], ['recess', 'recess'], ['pins', 'pin']],
   };
 
   // data: { s, sheet, plan: { positive: {…}, negative: {…} }, thin: { positive, negative } }
@@ -66,7 +66,7 @@
   };
 
   // Pianta della sola piastra (senza disegno), calcolata nella pagina: utile per regolare perni e tacca.
-  E.platePlan = function (s, mirror) {
+  E.platePlan = function (s, mirror, sheet, stopsMode) {
     const G = E.geometry,
       geo = G.plateGeometry(s),
       px = s.w / 2 - geo.pinInset,
@@ -78,9 +78,14 @@
       holes = G.union([-1, 1].map((v) => G.rect(v * px, geo.pinY, s.pin + 2 * s.pg, s.pin + 2 * s.pg))),
       flare = s.holeFlare > 0 ? G.offset(holes, s.holeFlare) : [];
     const m = (paths) => (mirror ? G.reflected(paths) : paths);
+    let stops = [];
+    try {
+      stops = E.model.stopShapes(sheet, s, stopsMode);
+    } catch (ignore) {}
+    const recess = stops.length ? m(G.offset(stops, s.stopClear ?? 0.3, 'miter')) : [];
     return {
-      positive: { plate: loops(plate), safe: loops(safe), relief: [], flare: loops(flare), holes: loops(holes) },
-      negative: { plate: loops(m(plate)), safe: loops(m(safe)), cavity: [], pins: loops(pins) },
+      positive: { plate: loops(plate), safe: loops(safe), relief: [], flare: loops(flare), holes: loops(holes), stops: loops(stops) },
+      negative: { plate: loops(m(plate)), safe: loops(m(safe)), cavity: [], pins: loops(pins), recess: loops(recess) },
     };
   };
 })((self.Embosser = self.Embosser || {}));

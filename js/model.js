@@ -82,6 +82,60 @@
     return diff(closed, paths).filter((p) => Math.abs(C.Clipper.Area(p)) > minArea);
   }
 
+  // Battute di riscontro a «L» appena fuori dagli angoli del foglio.
+  // mode: 'bottom' (due angoli inferiori) o 'corners' (quattro angoli); ogni L ha un braccio lungo ciascun lato.
+  function stopShapes(sheet, s, mode) {
+    if (!sheet || !mode || mode === 'none') return [];
+    const g = s.stopGap ?? 0.2,
+      W = s.stopW ?? 2,
+      L = s.stopLen ?? 10,
+      hw = sheet.w / 2,
+      hh = sheet.h / 2;
+    if (!(W > 0) || !(L > 0)) throw Error('Battute: lunghezza e spessore devono essere maggiori di zero.');
+    if (L > Math.min(hw, hh)) throw Error('Battute: bracci più lunghi di metà del lato corto del foglio.');
+    const box = (x1, y1, x2, y2) => rect((x1 + x2) / 2, (y1 + y2) / 2, Math.abs(x2 - x1), Math.abs(y2 - y1));
+    const corners = mode === 'corners' ? [[-1, -1], [1, -1], [-1, 1], [1, 1]] : [[-1, -1], [1, -1]];
+    const out = [];
+    for (const [sx, sy] of corners) {
+      const xOut = sx * (hw + g + W),
+        yOut = sy * (hh + g + W);
+      out.push(box(xOut, sy * (hh + g), sx * (hw - L), yOut)); // braccio lungo il lato orizzontale
+      out.push(box(sx * (hw + g), yOut, xOut, sy * (hh - L))); // braccio lungo il lato verticale
+    }
+    return union(out);
+  }
+
+  // Strati non sovrapposti da elementi che occupano intervalli di quota diversi (rilievo a gradini, battute…).
+  function stack(features) {
+    const q = (z) => Math.round(z * 1e6) / 1e6;
+    features = features.map((f) => ({ ...f, z0: q(f.z0), z1: q(f.z1) }));
+    const zs = [...new Set(features.flatMap((f) => [f.z0, f.z1]))].sort((a, b) => a - b),
+      out = [];
+    for (let i = 0; i + 1 < zs.length; i++) {
+      const za = zs[i],
+        zb = zs[i + 1],
+        inside = features.filter((f) => f.z0 <= za + 1e-9 && f.z1 >= zb - 1e-9);
+      if (!inside.length) continue;
+      out.push({ z0: za, z1: zb, paths: inside.length === 1 ? inside[0].paths : union(inside.flatMap((f) => f.paths)) });
+    }
+    return out;
+  }
+
+  // Toglie region dagli strati tra zCut e la superficie (gli strati sopra zTop restano intatti).
+  function carve(layers, zCut, zTop, region) {
+    if (!region.length) return layers;
+    const out = [];
+    for (const l of layers) {
+      if (l.z1 <= zCut + 1e-9 || l.z0 >= zTop - 1e-9) {
+        out.push(l);
+        continue;
+      }
+      if (l.z0 < zCut - 1e-9) out.push({ ...l, z1: zCut });
+      out.push({ z0: Math.max(l.z0, zCut), z1: l.z1, paths: diff(l.paths, region) });
+    }
+    return out;
+  }
+
   // Genera positiva e negativa come elenchi di vertici [x,y,z] (tre per triangolo).
   function build(source, opts) {
     const s = opts.s,
@@ -126,20 +180,45 @@
     const depth = H.depth;
     if (depth >= H.b - 0.4) throw Error('Aumentare lo spessore piastra: cavità ' + depth.toFixed(2) + ' mm più almeno 0,4 mm di fondo.');
 
+    // Battute di riscontro sulla positiva e sedi corrispondenti (con gioco) sulla negativa.
+    const stops = stopShapes(opts.sheet, s, opts.stops);
+    let stopH = 0,
+      recess = [],
+      recessDepth = 0;
+    if (stops.length) {
+      const snap = (x) => (H.L ? Math.max(H.L, Math.round(x / H.L - 1e-9) * H.L) : x);
+      stopH = Math.round(snap(s.stopH ?? 1.2) * 1e6) / 1e6;
+      if (!(stopH > 0)) throw Error('Battute: l’altezza deve essere maggiore di zero.');
+      if (stopH <= s.paper) warnings.push('Battute più basse dello spessore carta: il foglio potrebbe scavalcarle.');
+      if (diff(stops, offset(plate, -1)).length) throw Error('Battute fuori dalla piastra o nella tacca: allarga la piastra o riduci le battute.');
+      if (intersect(stops, offset(flared, 0.5)).length) throw Error('Battute sovrapposte ai fori guida: riduci spessore o lunghezza delle battute, o sposta i perni.');
+      recess = mirror(offset(stops, s.stopClear ?? 0.3, 'miter'));
+      const snapUp = (x) => (H.L ? Math.ceil(x / H.L - 1e-6) * H.L : x);
+      recessDepth = Math.round(snapUp(stopH + (s.vertical || 0.1)) * 1e6) / 1e6;
+      if (recessDepth >= H.b - 0.4) throw Error('Battute troppo alte: le sedi sulla negativa lascerebbero meno di 0,4 mm di fondo.');
+      if (diff(recess, offset(negativePlate, -0.8)).length) throw Error('Sedi delle battute troppo vicine al bordo della negativa.');
+      if (intersect(recess, offset(pins, 0.5)).length) throw Error('Sedi delle battute sovrapposte ai perni.');
+      if (opts.sheet.overhang === 'top' && opts.stops === 'corners')
+        warnings.push('Con le battute ai quattro angoli il dorso della J card urta le battute superiori: usa «Angoli inferiori».');
+    }
+
     // Positiva: base (con svasatura dei fori nei primi due layer) e rilievo, a gradini se le pareti sono inclinate.
     const positiveLayers = [];
     const flareH = Math.min(2 * H.dz, H.b / 2);
     if (s.holeFlare > 0) positiveLayers.push({ z0: 0, z1: flareH, paths: diff(plate, flared) });
     positiveLayers.push({ z0: s.holeFlare > 0 ? flareH : 0, z1: H.b, paths: diff(plate, pockets) });
-    const reliefSteps = t > 0 ? Math.max(1, Math.round(H.r / H.dz)) : 1;
+    const reliefSteps = t > 0 ? Math.max(1, Math.round(H.r / H.dz)) : 1,
+      upper = [];
     for (let i = 0; i < reliefSteps; i++) {
       const z0 = H.b + (i * H.r) / reliefSteps,
         paths = i ? offset(art, -t * ((i * H.r) / reliefSteps), 'round', 0.05) : art;
       if (!paths.length) break;
-      positiveLayers.push({ z0, z1: H.b + ((i + 1) * H.r) / reliefSteps, paths });
+      upper.push({ z0, z1: H.b + ((i + 1) * H.r) / reliefSteps, paths });
     }
     // Unisce i gradini che hanno perso l'ultimo strato in altezza.
-    positiveLayers[positiveLayers.length - 1].z1 = Math.max(positiveLayers[positiveLayers.length - 1].z1, H.b + H.r);
+    upper[upper.length - 1].z1 = Math.max(upper[upper.length - 1].z1, H.b + H.r);
+    if (stops.length) upper.push({ z0: H.b, z1: H.b + stopH, paths: stops });
+    positiveLayers.push(...stack(upper));
 
     // Negativa: fondo, cavità (più stretta in profondità se le pareti sono inclinate), perni con punta smussata.
     const negativeLayers = [{ z0: 0, z1: H.b - depth, paths: negativePlate }];
@@ -170,7 +249,7 @@
       });
 
     const positive = E.mesh.mesh(positiveLayers);
-    const negative = E.mesh.mesh(negativeLayers);
+    const negative = E.mesh.mesh(recess.length ? carve(negativeLayers, H.b - recessDepth, H.b, recess) : negativeLayers);
 
     // Avvisi di stampabilità (non bloccanti).
     const thin = { positive: [], negative: [] };
@@ -187,16 +266,24 @@
       if (gaps.length) warnings.push(gaps.length + ' fessure del rilievo più strette di ' + w + ' mm (' + mm2(gaps) + ' mm²): potrebbero chiudersi in stampa.');
       if (islands.length) warnings.push(islands.length + ' isole della negativa più sottili di ' + w + ' mm (' + mm2(islands) + ' mm²).');
     }
+    if (opts.sheet && opts.sheet.inset > 0) {
+      const i = opts.sheet.inset;
+      if (diff(art, [rect(0, 0, opts.sheet.w - 2 * i, opts.sheet.h - 2 * i)]).length)
+        warnings.push('Il disegno arriva a meno di ' + i + ' mm dal bordo del foglio' + (opts.sheet.overhang ? ' o dalla piega del dorso' : '') + ': rischi di deformare la piega o il bordo.');
+    }
     if (s.lateral < s.paper) warnings.push('Gioco laterale minore dello spessore carta: la carta potrebbe tagliarsi sui bordi della cavità.');
     if (H.L && Math.abs(H.r - s.r) > 1e-6) warnings.push('Altezza rilievo arrotondata a ' + H.r.toFixed(2) + ' mm (multiplo del layer).');
     if (H.L && Math.abs(H.b - s.b) > 1e-6) warnings.push('Spessore piastra arrotondato a ' + H.b.toFixed(2) + ' mm.');
     if (H.L && Math.abs(H.ph - s.ph) > 1e-6) warnings.push('Altezza perni arrotondata a ' + H.ph.toFixed(2) + ' mm.');
     // Contorni 2D per l'anteprima in pianta (negativa vista dall'alto, già specchiata se richiesto).
     const plan = {
-      positive: { plate, safe, relief: art, holes: pockets, flare: s.holeFlare > 0 ? flared : [] },
-      negative: { plate: negativePlate, safe: negativeSafe, cavity, pins },
+      positive: { plate, safe, relief: art, holes: pockets, flare: s.holeFlare > 0 ? flared : [], stops },
+      negative: { plate: negativePlate, safe: negativeSafe, cavity, pins, recess },
     };
-    return { positive, negative, depth, heights: H, art, pins, pockets, cut: placed.cut, size: placed.size, warnings, thin, plan };
+    return {
+      positive, negative, depth, heights: { ...H, stopH, recessDepth }, art, pins, pockets, stops, recess,
+      cut: placed.cut, size: placed.size, warnings, thin, plan,
+    };
   }
 
   // Test geometrici e di mesh. sources: { frame, full } già interpretati dalla pagina (il parsing SVG richiede il DOM).
@@ -310,6 +397,47 @@
         ]);
       if (!same(G.plateShape(card.values), historic)) throw Error('Piastra predefinita diversa da quella storica.');
     }
+    // Preset J card con battute di riscontro.
+    {
+      const jc = E.PRESETS.jCard,
+        values = { ...jc.values, ...E.PRINTERS.a1.values, ...jc.material },
+        hw = jc.sheet.w / 2,
+        hh = jc.sheet.h / 2;
+      let withStops = null;
+      for (const mode of ['none', 'bottom', 'corners']) {
+        const r = build(sources.frame, opts({ ...values, aw: 95.6 }, 'original', { sheet: jc.sheet, stops: mode, bed: E.PRINTERS.a1.bed }));
+        const vp = check(r.positive, 'J card positiva ' + mode);
+        check(r.negative, 'J card negativa ' + mode);
+        count += 2;
+        if (mode === 'none') {
+          if (r.stops.length) throw Error('Battute presenti senza richiesta.');
+          withStops = vp;
+          continue;
+        }
+        // Battute fuori dal foglio, alla distanza richiesta, mai sul lato del dorso con «Angoli inferiori».
+        const pts = r.stops.flat().map((q) => [q.X / S, q.Y / S]);
+        const minY = Math.min(...pts.map((p) => p[1])),
+          maxY = Math.max(...pts.map((p) => p[1]));
+        if (Math.abs(minY - -(hh + values.stopGap + values.stopW)) > 1e-3 && Math.abs(minY - -(hh + 0.2 + 2)) > 1e-3)
+          throw Error('Battute inferiori in posizione errata: ' + minY);
+        if (mode === 'bottom' && maxY > -hh + 10 + 1e-3) throw Error('Battute inferiori oltre la lunghezza dei bracci.');
+        if (mode === 'corners' && maxY < hh) throw Error('Battute superiori mancanti.');
+        if (intersect(r.stops, [rect(0, 0, jc.sheet.w + 0.39, jc.sheet.h + 0.39)]).length) throw Error('Battute dentro il foglio.');
+        if (!r.recess.length || !(vp > withStops)) throw Error('Battute o sedi non generate.');
+        const L = E.PRINTERS.a1.values.layer;
+        if (Math.abs(r.heights.stopH / L - Math.round(r.heights.stopH / L)) > 1e-6) throw Error('Altezza battute non multipla del layer.');
+        if (mode === 'corners' && !r.warnings.some((w) => /dorso della J card/.test(w))) throw Error('Manca l’avviso sulle battute superiori della J card.');
+      }
+      let overlap = false;
+      try {
+        build(sources.frame, opts({ ...values, aw: 60, stopW: 4, pinY: -25 }, 'original', { sheet: jc.sheet, stops: 'bottom' }));
+      } catch (e) {
+        overlap = /fori guida/.test(e.message);
+      }
+      if (!overlap) throw Error('Battute sovrapposte ai fori guida non rifiutate.');
+      const near = build(sources.full, opts({ ...values, aw: 200 }, 'original', { sheet: jc.sheet, stops: 'bottom' }));
+      if (!near.warnings.some((w) => /meno di 3 mm dal bordo del foglio o dalla piega/.test(w))) throw Error('Manca l’avviso sul margine dalla piega.');
+    }
     // Profilo stampante A1: quote a layer, pareti inclinate, perni smussati, fori svasati.
     const a1 = { ...card.values, ...E.PRINTERS.a1.values },
       bed = E.PRINTERS.a1.bed;
@@ -342,7 +470,7 @@
     return { count };
   }
 
-  E.model = { artwork, build, heights, thinParts, narrowGaps, selfTest };
+  E.model = { artwork, build, stopShapes, stack, carve, heights, thinParts, narrowGaps, selfTest };
 
   // Compiti eseguibili nel worker o, in mancanza, nella pagina. I risultati sono clonabili.
   E.tasks = {
