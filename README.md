@@ -21,6 +21,7 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Perni sulla negativa e fori guida passanti sulla positiva.
 - Opzione per specchiare la negativa per l’accoppiamento faccia a faccia.
 - Piastre con angoli arrotondati e tacca triangolare di orientamento sul bordo superiore (specchiata sulla negativa quando è attiva la specchiatura); raggio, tacca, posizione dei perni e margine sono regolabili.
+- Anteprima del **foglio goffrato** sul formato del preset (o sull’ingombro del disegno), sempre visibile, e finestra con il foglio in 3D orbitabile.
 - Pianta 2D di positiva e negativa viste dall’alto, con rilievo, cavità, perni, fori, svasatura, margine, foglio e zone troppo sottili; visibile anche prima di caricare il disegno.
 - Preset con formato del foglio, ad esempio biglietto da visita 85 × 55 mm, con ritaglio del disegno al perimetro del foglio.
 - Inversione pieni/vuoti, con area di inversione a scelta tra contorno esterno e rettangolo d’ingombro.
@@ -46,6 +47,19 @@ La versione attuale esporta STL, non STEP, e non utilizza OpenCascade o WebAssem
 5. Controlla la **Pianta** sotto l’anteprima 3D e gli avvisi sotto lo stato: le zone troppo sottili per l’ugello sono evidenziate in arancione in entrambe le viste.
 6. Dopo il superamento dei controlli, usa **Esporta 3MF (entrambe sul piano)** oppure **Esporta positiva STL** ed **Esporta negativa STL**.
 7. Importa i file nello slicer e verifica dimensioni, orientamento, cavità e anteprima dei layer prima della stampa. Le coordinate dell’app sono espresse in millimetri; se lo slicer chiede l’unità, scegli mm.
+
+## Foglio goffrato
+
+Sotto la pianta, l’anteprima **Foglio goffrato** mostra come dovrebbe apparire la carta dopo la pressatura, aggiornata a ogni modifica:
+
+- con un preset il foglio ha il suo formato (per il biglietto da visita 85 × 55 mm) e il disegno è nella stessa posizione e con lo stesso ritaglio delle matrici; con **Personalizzato** il foglio è l’ingombro del disegno più 5 mm per lato;
+- il foglio è visto dal lato del rilievo, con la stessa orientazione della positiva; inversione pieni/vuoti, stroke e scala sono già applicati;
+- la carta sale dell’altezza del rilievo; la larghezza della piega sul bordo è gioco laterale + spessore carta + l’effetto dell’inclinazione delle pareti, con un raccordo morbido;
+- l’anteprima usa luce radente e pendenze esagerate per leggibilità.
+
+**Apri il foglio in 3D** apre una finestra con il foglio orbitabile (spessore della carta compreso): **Gira il foglio** mostra il retro, cioè l’impronta incavata; **Rilievo** permette di esagerare l’altezza ×2 o ×4; **Inquadra** ripristina la vista. Se la finestra resta aperta, segue le modifiche ai parametri. Senza disegno, con un preset, la finestra mostra il foglio piatto.
+
+È una simulazione indicativa: la piega reale dipende da carta, grammatura, fibre, umidità e pressione.
 
 Le impostazioni restano salvate nel browser; **Valori predefiniti** le azzera e riapplica preset e profilo A1.
 
@@ -171,6 +185,7 @@ Il pulsante **Test integrato** esegue nel browser una serie di controlli, senza 
 - molti contorni con il fondo allineato sulla stessa retta, senza e con profilo A1;
 - profilo A1: quote multiple del layer, effetto dell’inclinazione sui volumi, rifiuto di piastre oltre il piano, rilevamento di parti sottili e fessure strette;
 - preset biglietto da visita: ritaglio al foglio, guide fuori dal foglio, angoli R6, tacca e specchiatura;
+- simulazione del foglio: altezze al centro e agli angoli, piega sul bordo, fori del rilievo piatti, foglio senza preset;
 - piastra e guide personalizzate (angoli vivi, senza tacca, perni spostati), rifiuto delle geometrie non valide e coincidenza dei valori predefiniti con la piastra storica;
 - controllo di spigoli e volume su tutte le mesh generate.
 
@@ -180,7 +195,7 @@ L’esito atteso inizia con:
 Test superato: 68 mesh controllate.
 ```
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `plan-1` nel messaggio di stato.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `foglio-1` nel messaggio di stato.
 
 ## File esportati
 
@@ -203,6 +218,7 @@ Non richiede una fase di build: `index.html` carica script classici (non moduli 
 | `js/engine.js` | Invio dei calcoli al worker, annullamento del calcolo superato da una modifica più recente, ripiego nella pagina | pagina |
 | `js/worker.js` | Web Worker che esegue generazione e test geometrici | worker |
 | `js/viewer.js` | Anteprima 3D Three.js | pagina |
+| `js/sheet.js` | Simulazione del foglio goffrato (mappa di altezze con trasformata di distanza), anteprima con luce radente, finestra 3D | pagina |
 | `js/plan.js` | Pianta 2D in SVG inline; pianta della sola piastra quando non c’è un disegno | pagina |
 | `js/app.js` | Interfaccia: campi, preset, stato, export | pagina |
 
@@ -225,7 +241,7 @@ npx playwright install chromium
 npm test
 ```
 
-Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
+Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, l’anteprima e la finestra 3D del foglio, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
 
 ## GitHub Pages
 

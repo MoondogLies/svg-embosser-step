@@ -14,6 +14,8 @@
     fitted = false,
     viewer = null,
     engine = null,
+    sheetModel = null,
+    sheetViewer = null,
     staleBuild = false; // un calcolo è stato annullato da un test e l'anteprima va rigenerata
 
   const activeSheet = () => {
@@ -108,6 +110,45 @@
     }
   }
 
+  // Foglio goffrato: anteprima con luce radente e pulsante per la finestra 3D.
+  function updateSheet(relief, s, sheet) {
+    let m = null;
+    try {
+      m = relief || sheet ? E.sheet.model(relief || [], s, sheet) : null;
+    } catch (e) {
+      console.error(e);
+    }
+    sheetModel = m;
+    $('sheetPreview').hidden = !m;
+    $('sheet3d').disabled = !m;
+    if (!m) {
+      $('sheetNote').textContent = source
+        ? 'Foglio non disponibile: correggi l’errore indicato sopra per generare le matrici.'
+        : 'Carica un SVG per vedere il foglio goffrato.';
+      return;
+    }
+    E.sheet.drawPreview($('sheetPreview'), m);
+    $('sheetNote').textContent =
+      (sheet ? 'Foglio ' + mm(m.w) + ' × ' + mm(m.h) + ' mm del preset' : 'Foglio ' + mm(m.w) + ' × ' + mm(m.h) + ' mm (ingombro del disegno più 5 mm per lato)') +
+      ', visto dal lato del rilievo; carta ' + mm(m.thickness) + ' mm, rilievo ' + mm(m.relief) + ' mm. ' +
+      (m.embossed ? 'Anteprima con luce radente e pendenze esagerate per leggibilità; simulazione indicativa.' : 'Nessun rilievo: carica un SVG.');
+  }
+
+  function openSheet() {
+    if (!sheetModel) return;
+    const dialog = $('sheetDialog');
+    $('sheetTitle').textContent = 'Foglio goffrato ' + mm(sheetModel.w) + ' × ' + mm(sheetModel.h) + ' mm';
+    if (!dialog.open) dialog.showModal();
+    if (sheetViewer) sheetViewer.close();
+    sheetViewer = E.sheet.openViewer(dialog, $('sheetView'), sheetModel, { exaggeration: Number($('sheetExaggeration').value) });
+  }
+
+  function closeSheet() {
+    if (sheetViewer) sheetViewer.close();
+    sheetViewer = null;
+    if ($('sheetDialog').open) $('sheetDialog').close();
+  }
+
   function fail(e) {
     setExports(false);
     models = [];
@@ -120,6 +161,11 @@
       } catch (ignore) {}
     }
     showPlatePlan();
+    try {
+      updateSheet(null, settings(), activeSheet());
+    } catch (ignore) {
+      updateSheet(null, {}, null);
+    }
     status('Errore: ' + e.message);
     console.error(e);
   }
@@ -146,6 +192,7 @@
       if (viewer.count) viewer.fit();
       setWarnings([]);
       showPlatePlan();
+      updateSheet(null, s, activeSheet());
       status(V + ': carica un SVG. Il perimetro rosso indica il foglio e non viene esportato.');
       return;
     }
@@ -178,6 +225,8 @@
     viewer.thin(r.thin.positive, -s.w / 2 - 8, H.b + H.r + 0.06);
     viewer.thin(r.thin.negative, s.w / 2 + 8, H.b + 0.06);
     E.renderPlan($('plan'), { s, sheet: opts.sheet, plan: r.plan, thin: r.thin });
+    updateSheet(r.plan.positive.relief, { ...s, r: H.r }, opts.sheet);
+    if (sheetViewer) openSheet(); // la finestra aperta segue le modifiche
     if (!fitted) {
       viewer.fit();
       fitted = true;
@@ -313,12 +362,13 @@
     status('Test integrato in corso…');
     setBusy(true);
     try {
+      E.sheet.selfTest();
       const sources = E.svg.selfTest();
       const { count } = await engine.run('selftest', sources);
       status(
         'Test superato: ' + count + ' mesh controllate. Verificati fill-rule, stili CSS, stroke, dimensioni reali, defs inutilizzati, clipping, ' +
           'input Clipper, inversioni, centro decentrato, piastre R6, tacca specchiata, guide esterne, quote a layer, pareti inclinate, ' +
-          'piano di stampa e dettagli sottili. Disegno e parametri utente conservati.',
+          'piano di stampa, dettagli sottili e simulazione del foglio. Disegno e parametri utente conservati.',
       );
     } catch (e) {
       if (e && e.cancelled) return;
@@ -379,6 +429,15 @@
     $('male').onclick = () => download(0);
     $('female').onclick = () => download(1);
     $('both').onclick = download3mf;
+    $('sheet3d').onclick = openSheet;
+    $('sheetClose').onclick = closeSheet;
+    $('sheetDialog').addEventListener('close', () => {
+      if (sheetViewer) sheetViewer.close();
+      sheetViewer = null;
+    });
+    $('sheetFlip').onclick = () => sheetViewer && sheetViewer.flip();
+    $('sheetFrame').onclick = () => sheetViewer && sheetViewer.frame();
+    $('sheetExaggeration').onchange = () => sheetViewer && sheetViewer.exaggerate(Number($('sheetExaggeration').value));
     if (restore()) {
       $('presetNote').textContent = (E.PRESETS[$('preset').value] || {}).note || '';
       $('printerNote').textContent = activePrinter().note || '';

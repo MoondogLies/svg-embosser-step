@@ -45,6 +45,17 @@ h2{font-size:1.15em;margin:16px 0 6px}
 .legend{font-size:13px;color:#bbc4d0;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
 .sw{display:inline-block;width:14px;height:10px;margin-right:4px;vertical-align:middle;border-radius:2px}
 .sw.relief{background:#d4d8df}.sw.cavity{background:#93bad8;opacity:.7}.sw.pin{background:#93bad8}.sw.hole{background:#14171c;border:1px solid #8b95a3}
+#sheetBox{background:#1b1f25;border-radius:4px;padding:12px;display:flex;justify-content:center}
+#sheetPreview{max-width:100%;max-height:360px;width:auto;height:auto;box-shadow:0 2px 10px #0008;image-rendering:auto}
+#sheetPreview[hidden]{display:none}
+dialog#sheetDialog{width:min(1100px,96vw);height:min(800px,92vh);max-width:none;max-height:none;padding:0;border:1px solid #39414c;border-radius:8px;background:#14171c;color:#eee}
+dialog#sheetDialog[open]{display:flex;flex-direction:column}
+dialog#sheetDialog::backdrop{background:#000a}
+.dialogBar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid #39414c}
+.dialogBar strong{margin-right:auto}
+.dialogBar label{margin:0}
+#sheetView{flex:1;min-height:200px}
+dialog .note{margin:6px 12px}
 .sw.flare{border:1px dashed #c9a0ff}.sw.safe{border:1px dashed #6b7785}.sw.sheet{border:1px dashed #ff3030}.sw.thin{background:#ffa020}
 @media (max-width:600px){body{margin:12px}input[type=number]{width:100%}section label,.row label{flex:1 1 140px}}
 </style>
@@ -77,6 +88,17 @@ h2{font-size:1.15em;margin:16px 0 6px}
 <h2>Pianta</h2>
 <div id="plan"></div>
 <p class="legend"><span><span class="sw relief"></span>rilievo</span><span><span class="sw cavity"></span>cavità</span><span><span class="sw pin"></span>perni</span><span><span class="sw hole"></span>fori guida</span><span><span class="sw flare"></span>svasatura</span><span><span class="sw safe"></span>margine di sicurezza</span><span><span class="sw sheet"></span>foglio</span><span><span class="sw thin"></span>troppo sottile</span></p>
+<h2>Foglio goffrato</h2>
+<div id="sheetBox"><canvas id="sheetPreview" aria-label="Anteprima del foglio goffrato con luce radente"></canvas></div>
+<div class="buttons"><button id="sheet3d" disabled>Apri il foglio in 3D</button></div>
+<p id="sheetNote" class="note">Carica un SVG per vedere il foglio goffrato.</p>
+<dialog id="sheetDialog" aria-labelledby="sheetTitle">
+<div class="dialogBar"><strong id="sheetTitle">Foglio goffrato</strong>
+<label class="check">Rilievo <select id="sheetExaggeration"><option value="1">reale</option><option value="2">× 2</option><option value="4">× 4</option></select></label>
+<button id="sheetFlip">Gira il foglio</button><button id="sheetFrame">Inquadra</button><button id="sheetClose" autofocus>Chiudi</button></div>
+<div id="sheetView"></div>
+<p class="note">Trascina per ruotare, rotella per lo zoom. Simulazione indicativa: la piega reale dipende da carta, grammatura e pressione.</p>
+</dialog>
 <p id="status" role="status" aria-live="polite">Carica un SVG con forme riempite.</p>
 <ul id="warnings" aria-live="polite"></ul>
 <small>Angoli, perni, tacca di orientamento e margine si regolano in «Piastra e guide»; la tacca è specchiata sulla negativa per l’accoppiamento faccia a faccia. Il perimetro rosso è solo una guida e non viene esportato; in arancione le zone troppo sottili per l’ugello. Fori guida passanti. Serve Internet per le dipendenze CDN. Il controllo degli spigoli non rileva ogni possibile auto-intersezione: verificare anche nello slicer.</small>
@@ -97,6 +119,7 @@ window.addEventListener('error',function(event){var el=document.getElementById('
 <script src="js/engine.js"></script>
 <script src="js/viewer.js"></script>
 <script src="js/plan.js"></script>
+<script src="js/sheet.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

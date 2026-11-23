@@ -311,6 +311,47 @@ test('la pianta 2D mostra piastra e guide anche senza disegno, poi rilievo e cav
   await context.close();
 });
 
+test('anteprima del foglio goffrato e finestra 3D coerenti con il preset', async () => {
+  const { page, context, status, errors } = await openApp();
+  await page.selectOption('#preset', 'businessCard');
+  // Senza disegno: foglio piatto del preset, già apribile.
+  assert.match(await page.textContent('#sheetNote'), /Foglio 85 × 55 mm del preset/);
+  await loadSvg(page, svg('<rect x="10" y="10" width="80" height="80"/><rect x="30" y="30" width="40" height="40" fill="white"/>'));
+  await waitStatus(page, DONE);
+  assert.match(await status(), /superano il controllo/, await status());
+  assert.match(await page.textContent('#sheetNote'), /Foglio 85 × 55 mm del preset/);
+  // L'anteprima ha le proporzioni del foglio e mostra ombre (non è uniforme).
+  const info = await page.evaluate(() => {
+    const c = document.getElementById('sheetPreview');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let min = 255, max = 0;
+    for (let i = 0; i < d.length; i += 4) { min = Math.min(min, d[i]); max = Math.max(max, d[i]); }
+    return { ratio: c.width / c.height, min, max };
+  });
+  assert.ok(Math.abs(info.ratio - 85 / 55) < 0.02, 'proporzioni ' + info.ratio);
+  assert.ok(info.max - info.min > 40, 'anteprima senza ombre');
+  assert.equal(await page.isDisabled('#sheet3d'), false);
+  await page.click('#sheet3d');
+  assert.equal(await page.evaluate(() => document.getElementById('sheetDialog').open), true);
+  assert.match(await page.textContent('#sheetTitle'), /85 × 55 mm/);
+  assert.equal(await page.locator('#sheetView canvas').count(), 1);
+  await page.selectOption('#sheetExaggeration', '4');
+  await page.click('#sheetFlip');
+  await page.click('#sheetClose');
+  assert.equal(await page.evaluate(() => document.getElementById('sheetDialog').open), false);
+  assert.equal(await page.locator('#sheetView canvas').count(), 0);
+  // Preset personalizzato: foglio pari all'ingombro del disegno più 5 mm per lato.
+  await page.selectOption('#preset', 'custom');
+  await waitStatus(page, /^Errore/); // disegno largo 85 mm su piastra alta 70: non entra
+  assert.match(await page.textContent('#sheetNote'), /correggi l’errore/);
+  await page.evaluate(() => { const aw = document.getElementById('aw'); aw.value = '50'; aw.dispatchEvent(new Event('change')); });
+  await waitStatus(page, DONE);
+  assert.match(await status(), /superano il controllo/, await status());
+  assert.match(await page.textContent('#sheetNote'), /Foglio 60 × 60 mm \(ingombro del disegno più 5 mm per lato\)/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('valori negativi solo per lo spostamento verticale dei perni', async () => {
   const { page, context, status } = await openApp();
   await page.evaluate(() => { const el = document.getElementById('pinInset'); el.value = '-3'; el.dispatchEvent(new Event('change')); });

@@ -1,7 +1,7 @@
 // Configurazione condivisa tra pagina e worker: revisione, parametri e preset.
 'use strict';
 (function (E) {
-  E.VERSION = 'plan-1';
+  E.VERSION = 'foglio-1';
   // Fattore di scala mm → interi per Clipper (risoluzione 0,0001 mm).
   E.S = 10000;
 
