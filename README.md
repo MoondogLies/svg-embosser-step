@@ -68,7 +68,9 @@ L’app blocca la generazione se questa profondità è maggiore o uguale allo sp
 - I fori del disegno restano vuoti nel rilievo e corrispondono a isole nella negativa. Una cornice, ad esempio, deve produrre un rilievo e una cavità ad anello.
 - Converti i testi in tracciati.
 - Converti gli stroke in contorni riempiti: le sole linee non vengono convertite in rilievi.
-- Espandi gli elementi `use` e rimuovi o risolvi immagini raster, `foreignObject`, maschere e clipping: questi elementi non sono supportati e vengono rifiutati in importazione.
+- Espandi gli elementi `use` e rimuovi o applica immagini raster, `foreignObject`, maschere e clipping usati nel disegno: vengono rifiutati in importazione. Le definizioni non usate (ad esempio un `clipPath` in `<defs>` mai referenziato) e gli elementi nascosti sono ignorati.
+- `fill-rule` è rispettato (`nonzero` ed `evenodd`), sia come attributo sia come stile inline, regola CSS o valore ereditato da un gruppo.
+- Gli stili CSS interni (`<style>` con selettori di classe, id e tipo) sono applicati per `fill`, `fill-opacity`, `fill-rule`, `opacity`, `display` e `visibility`: le forme con `fill: none`, trasparenti o nascoste non diventano rilievi.
 - Gli SVG vengono interpretati come regioni piene/vuote, non come mappe di altezza: colori e gradienti non definiscono quote di rilievo diverse.
 - Le curve vengono campionate in segmenti; l’STL non conserva curve CAD esatte.
 
@@ -97,7 +99,7 @@ Test cornice superato: 8 mesh controllate.
 
 Il test non sostituisce il disegno caricato né modifica gli STL già generati. Usa la posizione e l’opzione di specchiatura correntemente selezionate.
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione con questa correzione mostra `mesh-2` nel messaggio iniziale.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `sheet-5` nel messaggio iniziale.
 
 ## File esportati
 
