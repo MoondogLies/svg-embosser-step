@@ -133,11 +133,13 @@
     return { paths: intersect(paths, region), cut: diff(paths, region).length > 0 };
   }
 
-  function offset(paths, mm) {
+  // join 'round' (predefinito) oppure 'miter';
+  // tolerance: scostamento massimo dei raccordi dall'arco ideale, in mm.
+  function offset(paths, mm, join = 'round', tolerance = 0.01) {
     if (!mm) return paths;
-    const co = new C.ClipperOffset(2, 0.01 * S),
+    const co = new C.ClipperOffset(2, tolerance * S),
       out = [];
-    co.AddPaths(paths, C.JoinType.jtRound, C.EndType.etClosedPolygon);
+    co.AddPaths(paths, join === 'miter' ? C.JoinType.jtMiter : C.JoinType.jtRound, C.EndType.etClosedPolygon);
     co.Execute(out, mm * S);
     return union(out);
   }

@@ -75,6 +75,19 @@
           add(line);
         }
       },
+      // Contorni arancioni delle zone troppo sottili, sopra la piastra in posizione x alla quota z.
+      thin(loops, x, z) {
+        for (const loop of loops || []) {
+          const pts = [];
+          for (let i = 0; i < loop.length; i += 2) pts.push(loop[i], loop[i + 1], z);
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+          const line = new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color: 0xffa020, depthTest: false, depthWrite: false }));
+          line.position.x = x;
+          line.renderOrder = 11;
+          add(line);
+        }
+      },
       fit() {
         if (!objects.length) return;
         const box = new THREE.Box3();

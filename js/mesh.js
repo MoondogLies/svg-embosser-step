@@ -55,34 +55,59 @@
   }
 
   const vertexKey = (v) => v.map((x) => Math.round(x * 10000)).join(',');
-  const edgeKey = (ka, kb) => (ka < kb ? ka + '|' + kb : kb + '|' + ka);
+
+  // Identificativi numerici dei vertici sulla griglia di 0,0001 mm (chiavi numeriche: molto più veloci delle stringhe).
+  const OFF = 2 ** 21; // ±209 mm in X/Y
+  function vertexIds(v) {
+    const xy = new Map(),
+      ids = new Int32Array(v.length);
+    let next = 0;
+    for (let i = 0; i < v.length; i++) {
+      const p = v[i],
+        x = Math.round(p[0] * 10000) + OFF,
+        y = Math.round(p[1] * 10000) + OFF,
+        z = Math.round(p[2] * 10000);
+      if (x < 0 || y < 0 || x >= 2 * OFF || y >= 2 * OFF) throw Error('Coordinate oltre ±209 mm.');
+      const k = x * 2 ** 22 + y;
+      let zs = xy.get(k);
+      if (!zs) xy.set(k, (zs = new Map()));
+      let id = zs.get(z);
+      if (id === undefined) zs.set(z, (id = next++));
+      ids[i] = id;
+    }
+    return ids;
+  }
+  const EDGE = 2 ** 26;
+  const edgeKey = (a, b) => (a < b ? a * EDGE + b : b * EDGE + a);
 
   // Spigoli non condivisi da esattamente due facce con orientamento opposto.
-  function edgeReport(v) {
+  function edgeReport(v, ids = vertexIds(v)) {
     const m = new Map();
     for (let i = 0; i < v.length; i += 3)
       for (let j = 0; j < 3; j++) {
-        const a = v[i + j],
-          b = v[i + ((j + 1) % 3)],
-          ka = vertexKey(a),
-          kb = vertexKey(b),
-          k = edgeKey(ka, kb);
+        const ia = ids[i + j],
+          ib = ids[i + ((j + 1) % 3)],
+          k = edgeKey(ia, ib);
         let e = m.get(k);
         if (!e) {
-          e = { a, b, n: 0, dir: 0 };
+          e = { a: v[i + j], b: v[i + ((j + 1) % 3)], key: k, n: 0, dir: 0 };
           m.set(k, e);
         }
         e.n++;
-        e.dir += ka < kb ? 1 : -1;
+        e.dir += ia < ib ? 1 : -1;
       }
-    return [...m.values()].filter((e) => e.n !== 2 || e.dir !== 0);
+    const bad = [];
+    for (const e of m.values()) if (e.n !== 2 || e.dir !== 0) bad.push(e);
+    return bad;
   }
 
   // Suddivide gli spigoli con giunzioni a T finché la mesh non è conforme (max 16 passate).
+  // Ogni spigolo viene diviso in una volta in tutti i punti che giacciono al suo interno.
   function conform(vertices) {
     let v = vertices.map((p) => p.map((x) => Math.round(x * 10000) / 10000));
     for (let pass = 0; pass < 16; pass++) {
-      const bad = edgeReport(v);
+      const ids = vertexIds(v),
+        bad = edgeReport(v, ids);
       if (!bad.length) return v;
       const points = [...new Map(bad.flatMap((e) => [e.a, e.b]).map((p) => [vertexKey(p), p])).values()];
       const splits = new Map();
@@ -93,31 +118,38 @@
           d = b.map((x, k) => x - a[k]),
           l = d.reduce((n, x) => n + x * x, 0);
         if (!l) continue;
+        const inside = [];
         for (const p of points) {
           const t = d.reduce((n, x, k) => n + x * (p[k] - a[k]), 0) / l;
           if (t <= 1e-9 || t >= 1 - 1e-9) continue;
-          if (p.some((x, k) => Math.abs(x - a[k] - t * d[k]) > 1e-8)) continue;
-          splits.set(edgeKey(vertexKey(a), vertexKey(b)), p);
-          break;
+          // Tolleranza di due passi della griglia (0,0001 mm): l'arrotondamento può spostare il punto fuori dalla retta.
+          if (p.some((x, k) => Math.abs(x - a[k] - t * d[k]) > 2e-4)) continue;
+          inside.push({ t, p });
         }
+        if (inside.length) splits.set(e.key, { from: vertexKey(a), points: inside.sort((x, y) => x.t - y.t).map((x) => x.p) });
       }
       if (!splits.size) return v;
       const out = [];
       for (let i = 0; i < v.length; i += 3) {
-        const t = v.slice(i, i + 3);
         let done = false;
         for (let j = 0; j < 3; j++) {
-          const a = t[j],
-            b = t[(j + 1) % 3],
-            c = t[(j + 2) % 3],
-            p = splits.get(edgeKey(vertexKey(a), vertexKey(b)));
-          if (p) {
-            out.push(a, p, c, p, b, c);
-            done = true;
-            break;
+          const split = splits.get(edgeKey(ids[i + j], ids[i + ((j + 1) % 3)]));
+          if (!split) continue;
+          const a = v[i + j],
+            b = v[i + ((j + 1) % 3)],
+            c = v[i + ((j + 2) % 3)];
+          // Punti ordinati da a verso b, qualunque sia il verso dello spigolo nel triangolo.
+          const pts = vertexKey(a) === split.from ? split.points : [...split.points].reverse();
+          let prev = a;
+          for (const p of pts) {
+            out.push(prev, p, c);
+            prev = p;
           }
+          out.push(prev, b, c);
+          done = true;
+          break;
         }
-        if (!done) out.push(...t);
+        if (!done) out.push(v[i], v[i + 1], v[i + 2]);
       }
       v = out;
     }
@@ -146,11 +178,14 @@
       const a = v[i],
         b = v[i + 1],
         c = v[i + 2];
-      if (![...a, ...b, ...c].every(Number.isFinite) || new Set([vertexKey(a), vertexKey(b), vertexKey(c)]).size < 3)
-        throw Error(name + ': triangolo degenere/non finito.');
+      for (let k = 0; k < 3; k++)
+        if (!Number.isFinite(a[k]) || !Number.isFinite(b[k]) || !Number.isFinite(c[k])) throw Error(name + ': triangolo non finito.');
       volume += (a[0] * (b[1] * c[2] - b[2] * c[1]) + a[1] * (b[2] * c[0] - b[0] * c[2]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
     }
-    const bad = edgeReport(v);
+    const ids = vertexIds(v);
+    for (let i = 0; i < v.length; i += 3)
+      if (ids[i] === ids[i + 1] || ids[i + 1] === ids[i + 2] || ids[i] === ids[i + 2]) throw Error(name + ': triangolo degenere.');
+    const bad = edgeReport(v, ids);
     if (bad.length) {
       const details = bad
         .slice(0, 4)
@@ -187,5 +222,5 @@
     return buffer;
   }
 
-  E.mesh = { tri, cap, walls, vertexKey, edgeReport, conform, mesh, check, flatten, stl };
+  E.mesh = { tri, cap, walls, vertexKey, vertexIds, edgeReport, conform, mesh, check, flatten, stl };
 })((self.Embosser = self.Embosser || {}));

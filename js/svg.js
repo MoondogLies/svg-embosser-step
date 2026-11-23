@@ -114,12 +114,74 @@
     return alpha(inherited(el, 'fill-opacity', rules, '1')) > 0;
   }
 
-  function parse(text) {
+  // Scala cumulata delle trasformazioni (radice del determinante), per lo spessore degli stroke.
+  function transformScale(el) {
+    let k = 1;
+    for (let n = el; n && n.nodeType === 1; n = n.parentNode) {
+      const list = n.transform && n.transform.baseVal;
+      const m = list && list.numberOfItems ? list.consolidate().matrix : null;
+      if (m) k *= Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
+    }
+    return k;
+  }
+
+  // Millimetri per unità utente dell'SVG, da width/height e viewBox (px a 96 dpi se senza unità).
+  const UNIT_MM = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96, '': 25.4 / 96 };
+  function physicalScale(root) {
+    const length = (name) => {
+      const m = /^\s*([\d.]+(?:e[-+]?\d+)?)\s*(mm|cm|in|pt|pc|px|)\s*$/i.exec(root.getAttribute(name) || '');
+      return m ? { mm: parseFloat(m[1]) * UNIT_MM[m[2].toLowerCase()], absolute: m[2] !== '' && m[2].toLowerCase() !== 'px' } : null;
+    };
+    const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    const hasVb = vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0;
+    const w = length('width'),
+      h = length('height');
+    let mmPerUnit = 25.4 / 96;
+    if (hasVb && w) mmPerUnit = w.mm / vb[2];
+    else if (hasVb && h) mmPerUnit = h.mm / vb[3];
+    else if (!hasVb && w) mmPerUnit = 25.4 / 96;
+    return { mmPerUnit, sizeKnown: !!((w && w.absolute) || (h && h.absolute)) };
+  }
+
+  const CAPS = { butt: 'etOpenButt', round: 'etOpenRound', square: 'etOpenSquare' };
+  const JOINS = { miter: 'jtMiter', 'miter-clip': 'jtMiter', arcs: 'jtMiter', round: 'jtRound', bevel: 'jtSquare' };
+  const CLOSED_SHAPES = new Set(['rect', 'circle', 'ellipse', 'polygon']);
+
+  // Contorno di uno stroke come regione piena (in unità SVG), calcolato con ClipperOffset.
+  function strokeOutline(el, path, rules, unit) {
+    const width = parseFloat(inherited(el, 'stroke-width', rules, '1')) * transformScale(el);
+    if (!(width > 0)) return [];
+    const cap = CAPS[inherited(el, 'stroke-linecap', rules, 'butt')] || 'etOpenButt',
+      join = JOINS[inherited(el, 'stroke-linejoin', rules, 'miter')] || 'jtMiter',
+      miter = Math.max(1, parseFloat(inherited(el, 'stroke-miterlimit', rules, '4')) || 4);
+    const co = new ClipperLib.ClipperOffset(miter, 0.002 * width * unit);
+    for (const sub of path.subPaths) {
+      const pts = sub.getPoints();
+      if (pts.length < 2) continue;
+      const closed = CLOSED_SHAPES.has(el.localName) || sub.autoClose;
+      const ints = pts.map((p) => ({ X: Math.round(p.x * unit), Y: Math.round(p.y * unit) }));
+      co.AddPath(ints, ClipperLib.JoinType[join], closed ? ClipperLib.EndType.etClosedLine : ClipperLib.EndType[cap]);
+    }
+    const out = [];
+    co.Execute(out, (width / 2) * unit);
+    return out.map((p) => p.map((q) => ({ x: q.X / unit, y: q.Y / unit })));
+  }
+
+  function stroked(el, rules) {
+    const stroke = inherited(el, 'stroke', rules, 'none').toLowerCase().replace(/\s+/g, '');
+    if (stroke === 'none' || stroke === 'transparent' || /^(rgba|hsla)\(.*,0(\.0*)?%?\)$/.test(stroke)) return false;
+    return alpha(inherited(el, 'stroke-opacity', rules, '1')) > 0;
+  }
+
+  // options.strokes: converte gli stroke visibili in aree piene (predefinito true).
+  function parse(text, options = {}) {
+    const strokes = options.strokes !== false;
     const probe = new DOMParser().parseFromString(text, 'image/svg+xml');
     if (probe.querySelector('parsererror') || probe.documentElement.localName !== 'svg') throw Error('SVG non valido.');
     const data = new THREE.SVGLoader().parse(text),
       root = data.xml,
-      rules = cssRules(root.ownerDocument);
+      rules = cssRules(root.ownerDocument),
+      warnings = [];
     for (const el of root.querySelectorAll('text,image,use,foreignObject'))
       if (rendered(el) && !hidden(el, rules))
         throw Error('Espandere testi, immagini e use prima di importare (elemento <' + el.localName + '>).');
@@ -131,32 +193,59 @@
           throw Error('Applicare o rimuovere ' + (prop === 'mask' ? 'le maschere' : 'i tracciati di ritaglio') + ' usati nel disegno prima di importare.');
       }
     }
+    // Scala intera per gli offset degli stroke, proporzionata all'estensione del disegno.
+    let extent = 1;
+    for (const path of data.paths)
+      for (const sub of path.subPaths) for (const p of sub.getPoints()) extent = Math.max(extent, Math.abs(p.x), Math.abs(p.y));
+    const unit = 1e7 / extent;
     const result = [];
     let minX = Infinity,
       minY = Infinity,
       maxX = -Infinity,
-      maxY = -Infinity;
-    for (const path of data.paths) {
-      const el = path.userData && path.userData.node;
-      if (!el || !rendered(el) || hidden(el, rules) || !filled(el, rules)) continue;
-      const rule = inherited(el, 'fill-rule', rules, 'nonzero') === 'evenodd' ? 'evenodd' : 'nonzero',
-        polys = [];
-      for (const sub of path.subPaths) {
-        // Stessa risoluzione delle curve usata da SVGLoader.createShapes.
-        const pts = sub.getPoints();
-        if (pts.length < 3) continue;
-        polys.push(pts.map((p) => ({ x: p.x, y: p.y })));
-        for (const p of pts) {
+      maxY = -Infinity,
+      strokeCount = 0,
+      ignoredStrokes = 0,
+      dashed = false;
+    const add = (rule, polys) => {
+      const kept = polys.filter((p) => p.length >= 3);
+      if (!kept.length) return;
+      for (const poly of kept)
+        for (const p of poly) {
           minX = Math.min(minX, p.x);
           maxX = Math.max(maxX, p.x);
           minY = Math.min(minY, p.y);
           maxY = Math.max(maxY, p.y);
         }
+      result.push({ rule, polys: kept });
+    };
+    for (const path of data.paths) {
+      const el = path.userData && path.userData.node;
+      if (!el || !rendered(el) || hidden(el, rules)) continue;
+      if (filled(el, rules)) {
+        const rule = inherited(el, 'fill-rule', rules, 'nonzero') === 'evenodd' ? 'evenodd' : 'nonzero';
+        // Stessa risoluzione delle curve usata da SVGLoader.createShapes.
+        add(rule, path.subPaths.map((sub) => sub.getPoints().map((p) => ({ x: p.x, y: p.y }))));
       }
-      if (polys.length) result.push({ rule, polys });
+      if (stroked(el, rules)) {
+        if (!strokes) {
+          ignoredStrokes++;
+          continue;
+        }
+        const dash = inherited(el, 'stroke-dasharray', rules, 'none');
+        if (dash !== 'none' && !/^0(\s*[, ]\s*0)*$/.test(dash)) dashed = true;
+        const outline = strokeOutline(el, path, rules, unit);
+        if (outline.length) {
+          strokeCount++;
+          add('nonzero', outline);
+        }
+      }
     }
-    if (!result.length || maxX <= minX || maxY <= minY) throw Error('Nessuna area riempita valida.');
-    return { result, minX, minY, maxX, maxY };
+    if (!result.length || maxX <= minX || maxY <= minY)
+      throw Error('Nessuna area riempita valida.' + (ignoredStrokes ? ' Il disegno contiene solo contorni: attiva «Converti gli stroke in rilievi».' : ''));
+    if (strokeCount) warnings.push(strokeCount + ' contorni (stroke) convertiti in aree piene.');
+    if (dashed) warnings.push('Tratteggi degli stroke ignorati: convertiti come linee continue.');
+    if (ignoredStrokes) warnings.push(ignoredStrokes + ' contorni (stroke) ignorati.');
+    return { result, minX, minY, maxX, maxY, warnings, ...physicalScale(root) };
   }
 
   const svg = (body) => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' + body + '</svg>';
@@ -205,6 +294,28 @@
       }
       if (!refused) throw Error('Elemento non supportato non rifiutato: ' + body);
     }
+    // Stroke convertiti in aree piene.
+    const strokeArea = (body, o) => E.geometry.area(E.model.artwork(parse(svg(body), o), { s, align: 'center', invert: false, sheet: null }).paths);
+    const ring = strokeArea('<rect x="10" y="10" width="80" height="80" fill="none" stroke="#000" stroke-width="10"/>');
+    // Ingombro 5..95 (90 unità) → scala 50/90; area 90² − 70² unità.
+    if (Math.abs(ring - (90 * 90 - 70 * 70) * (50 / 90) ** 2) > 0.5) throw Error('Stroke chiuso convertito male: area ' + ring.toFixed(1));
+    const line = strokeArea('<g transform="scale(2)"><line x1="0" y1="25" x2="50" y2="25" stroke="black" stroke-width="5"/></g>');
+    // Linea 100 × 10 unità (stroke scalato ×2, estremi netti) → larga 50 mm, alta 5 mm.
+    if (Math.abs(line - 250) > 0.5) throw Error('Stroke aperto o scala della trasformazione errati: area ' + line.toFixed(1));
+    let strokeOff = false;
+    try {
+      strokeArea('<circle cx="50" cy="50" r="40" fill="none" stroke="black"/>', { strokes: false });
+    } catch (e) {
+      strokeOff = /solo contorni/.test(e.message);
+    }
+    if (!strokeOff) throw Error('Disattivazione degli stroke non rispettata.');
+    // Dimensioni reali: 100 unità di viewBox in 40 mm.
+    const real = parse('<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="20mm" viewBox="0 0 100 50"><rect width="100" height="50"/></svg>');
+    if (!real.sizeKnown || Math.abs(real.mmPerUnit - 0.4) > 1e-9) throw Error('Dimensioni reali dell’SVG non lette.');
+    const realArea = E.geometry.area(E.model.artwork(real, { s, align: 'center', invert: false, sheet: null, scaleMode: 'file' }).paths);
+    if (Math.abs(realArea - 800) > 0.05) throw Error('Scala dalle dimensioni reali errata: area ' + realArea.toFixed(2));
+    const inch = parse('<svg xmlns="http://www.w3.org/2000/svg" width="1in" height="1in"><rect width="96" height="96"/></svg>');
+    if (Math.abs(inch.mmPerUnit - 25.4 / 96) > 1e-9) throw Error('Unità px senza viewBox errata.');
     // Sorgenti per i test geometrici nel worker.
     return {
       frame: parse(
@@ -212,6 +323,12 @@
           '<path d="M0 6400 l0 -6400 6400 0 6400 0 0 6400 0 6400 -6400 0 -6400 0 0 -6400z m9510 -75 l0 -3035 -3035 0 -3035 0 0 3035 0 3035 3035 0 3035 0 0 -3035z"/></g></svg>',
       ),
       full: parse('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0H200V80H0Z"/></svg>'),
+      // Molti rettangoli con il fondo sulla stessa retta: la triangolazione crea spigoli lunghi con decine di giunzioni a T.
+      aligned: parse(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 45"><path d="' +
+          Array.from({ length: 14 }, (_, i) => `M${i * 14} 10 C${i * 14 + 12} 0 ${i * 14 + 12} 40 ${i * 14} 30 Q${i * 14 + 6} 20 ${i * 14} 10Z M${i * 14 + 3} 34 h6 v4 h-6Z`).join(' ') +
+          '"/></svg>',
+      ),
     };
   }
 

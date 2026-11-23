@@ -142,13 +142,115 @@ test('esporta STL binari validi per positiva e negativa', async () => {
   await context.close();
 });
 
-test('rifiuta SVG senza aree riempite e blocca l’export', async () => {
+test('gli stroke diventano rilievi; disattivandoli l’SVG di soli contorni viene rifiutato', async () => {
   const { page, context, status } = await openApp();
-  await loadSvg(page, svg('<circle cx="50" cy="50" r="40" fill="none" stroke="black"/>'));
+  await loadSvg(page, svg('<circle cx="50" cy="50" r="40" fill="none" stroke="black" stroke-width="6"/>'));
+  await waitStatus(page, DONE);
+  assert.match(await status(), /superano il controllo/, await status());
+  assert.match(await page.textContent('#warnings'), /stroke\) convertiti/);
+  await page.click('#strokes');
   await waitStatus(page, /^Errore/);
-  assert.match(await status(), /Nessuna area riempita valida/);
+  assert.match(await status(), /solo contorni/);
   assert.equal(await page.isDisabled('#male'), true);
-  assert.equal(await page.isDisabled('#female'), true);
+  assert.equal(await page.isDisabled('#both'), true);
+  await context.close();
+});
+
+// Estrae un file da uno ZIP senza compressione (come quello generato dall'app).
+function unzipStored(buf) {
+  const files = {};
+  let o = 0;
+  while (buf.readUInt32LE(o) === 0x04034b50) {
+    assert.equal(buf.readUInt16LE(o + 8), 0, 'atteso metodo store');
+    const size = buf.readUInt32LE(o + 18),
+      nameLen = buf.readUInt16LE(o + 26),
+      extra = buf.readUInt16LE(o + 28);
+    const name = buf.toString('utf8', o + 30, o + 30 + nameLen);
+    files[name] = buf.subarray(o + 30 + nameLen + extra, o + 30 + nameLen + extra + size);
+    o += 30 + nameLen + extra + size;
+  }
+  return files;
+}
+
+test('profilo A1: quote multiple del layer ed export 3MF con due oggetti chiusi sul piano', async () => {
+  const { page, context, status } = await openApp();
+  assert.equal(await page.inputValue('#printer'), 'a1');
+  await loadSvg(page, svg('<rect x="10" y="10" width="80" height="80"/><rect x="30" y="30" width="40" height="40" fill="white"/>'));
+  await waitStatus(page, DONE);
+  const text = await status();
+  assert.match(text, /multipli del layer 0\.16 mm/, text);
+  const depth = Number(text.match(/cavità ([\d.]+)/)[1]);
+  assert.ok(Math.abs(depth / 0.16 - Math.round(depth / 0.16)) < 1e-6, 'cavità multipla del layer: ' + depth);
+  assert.match(text, /Pareti inclinate di 15°/);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#both')]);
+  assert.equal(download.suggestedFilename(), 'embosser_matrici.3mf');
+  const files = unzipStored(fs.readFileSync(await download.path()));
+  assert.ok(files['[Content_Types].xml'] && files['_rels/.rels'] && files['3D/3dmodel.model']);
+  const model = files['3D/3dmodel.model'].toString('utf8');
+  assert.match(model, /unit="millimeter"/);
+  const objects = [...model.matchAll(/<object id="(\d+)" name="([^"]+)"[^>]*>(.*?)<\/object>/g)];
+  assert.deepEqual(objects.map((m) => m[2]), ['Positiva', 'Negativa']);
+  for (const [, , name, body] of objects) {
+    const vertices = [...body.matchAll(/<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/g)];
+    const tris = [...body.matchAll(/<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"/g)].map((m) => m.slice(1).map(Number));
+    assert.ok(vertices.length > 0 && tris.length > 0, name);
+    // Ogni spigolo orientato compare una volta e il suo opposto una volta: mesh chiusa.
+    const edges = new Map();
+    for (const t of tris)
+      for (let k = 0; k < 3; k++) {
+        assert.ok(t[k] < vertices.length);
+        const key = t[k] + '>' + t[(k + 1) % 3];
+        edges.set(key, (edges.get(key) || 0) + 1);
+      }
+    for (const [key, n] of edges) {
+      const [a, b] = key.split('>');
+      assert.equal(n, 1, name + ': spigolo duplicato ' + key);
+      assert.equal(edges.get(b + '>' + a), 1, name + ': spigolo senza opposto ' + key);
+    }
+  }
+  // Piastre 100 × 70 affiancate sul piano 256 × 256.
+  const items = [...model.matchAll(/<item objectid="\d+" transform="1 0 0 0 1 0 0 0 1 ([\d.]+) ([\d.]+) 0"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  assert.equal(items.length, 2);
+  for (const [x, y] of items) assert.ok(x - 50 >= 0 && x + 50 <= 256 && y - 35 >= 0 && y + 35 <= 256, `fuori piano: ${x},${y}`);
+  await context.close();
+});
+
+test('dettagli più sottili dell’ugello generano un avviso', async () => {
+  const { page, context } = await openApp();
+  await page.selectOption('#preset', 'custom');
+  await loadSvg(page, svg('<rect x="0" y="0" width="100" height="30"/><rect x="0" y="49.8" width="100" height="0.4"/><rect x="0" y="70" width="100" height="30"/>'));
+  await waitStatus(page, DONE);
+  assert.match(await page.textContent('#warnings'), /più sottili di 0\.84 mm/);
+  await context.close();
+});
+
+test('le impostazioni restano dopo il ricaricamento e «Valori predefiniti» le azzera', async () => {
+  const { page, context } = await openApp();
+  await page.selectOption('#preset', 'custom');
+  await page.evaluate(() => { const r = document.getElementById('r'); r.value = '0.64'; r.dispatchEvent(new Event('change')); });
+  await page.selectOption('#printer', 'none');
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById('status').textContent.length > 0);
+  assert.equal(await page.inputValue('#r'), '0.64');
+  assert.equal(await page.inputValue('#printer'), 'none');
+  assert.equal(await page.inputValue('#layer'), '0');
+  await page.click('#reset');
+  assert.equal(await page.inputValue('#r'), '0.8');
+  assert.equal(await page.inputValue('#printer'), 'a1');
+  assert.equal(await page.inputValue('#layer'), '0.16');
+  await context.close();
+});
+
+test('si può trascinare un SVG sulla pagina', async () => {
+  const { page, context, status } = await openApp();
+  const handle = await page.evaluateHandle((text) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], 'drop.svg', { type: 'image/svg+xml' }));
+    return dt;
+  }, svg('<rect x="10" y="10" width="80" height="80"/>'));
+  await page.dispatchEvent('#drop', 'drop', { dataTransfer: handle });
+  await waitStatus(page, DONE);
+  assert.match(await status(), /superano il controllo/, await status());
   await context.close();
 });
 
