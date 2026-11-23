@@ -20,22 +20,26 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Gioco laterale applicato ai contorni della cavità tramite offset.
 - Perni sulla negativa e fori guida passanti sulla positiva.
 - Opzione per specchiare la negativa per l’accoppiamento faccia a faccia.
+- Piastre con angoli arrotondati R6 e tacca triangolare di orientamento sul bordo superiore (specchiata sulla negativa quando è attiva la specchiatura).
+- Preset con formato del foglio, ad esempio biglietto da visita 85 × 55 mm, con ritaglio del disegno al perimetro del foglio.
+- Inversione pieni/vuoti, con area di inversione a scelta tra contorno esterno e rettangolo d’ingombro.
+- Rispetto di `fill-rule` (`nonzero`/`evenodd`) e degli stili CSS interni all’SVG.
 - Correzione delle giunzioni a T tramite suddivisione degli spigoli.
 - Controllo degli spigoli e del volume prima di abilitare l’export.
-- Test integrato della cornice SVG.
+- Test integrato richiamabile dall’interfaccia e test automatici in GitHub Actions.
 
 La versione attuale esporta STL, non STEP, e non utilizza OpenCascade o WebAssembly. Il nome della repository conserva il riferimento storico a STEP.
 
 ## Utilizzo
 
 1. Apri l’app e seleziona un file `.svg`.
-2. Imposta dimensioni delle piastre e del disegno.
+2. Scegli un preset oppure **Personalizzato**, poi imposta dimensioni delle piastre e del disegno.
 3. Regola rilievo, spessore carta, giochi e perni.
 4. Controlla entrambe le matrici nell’anteprima: trascina per ruotare e usa la rotella per lo zoom. Il pulsante **Inquadra** ripristina un’inquadratura complessiva.
 5. Dopo il superamento dei controlli, usa **Esporta positiva STL** ed **Esporta negativa STL**.
 6. Importa i file nello slicer e verifica dimensioni, orientamento, cavità e anteprima dei layer prima della stampa. Le coordinate dell’app sono espresse in millimetri; se lo slicer chiede l’unità, scegli mm.
 
-I parametri aggiornano le mesh quando confermi la modifica del campo.
+I parametri aggiornano le mesh quando confermi la modifica del campo. Se un valore non è valido, il campo viene evidenziato in rosso e il messaggio indica il nome del parametro.
 
 ## Parametri
 
@@ -53,6 +57,21 @@ I parametri aggiornano le mesh quando confermi la modifica del campo.
 | Gioco per lato perni | Aumento del foro su ciascun lato: lato foro = lato perno + 2 × gioco. |
 | Posizione | Disegno centrato, in alto o in basso. |
 | Specchia la negativa | Riflette il disegno della negativa lungo X per il ribaltamento faccia a faccia. |
+| Inverti pieni/vuoti | Mette in rilievo i vuoti del disegno invece dei pieni. |
+| Area di inversione | **Contorno esterno**: rilievo nei vuoti interni delle sagome. **Rettangolo d’ingombro**: rilievo in tutti i vuoti entro l’ingombro del disegno. |
+
+Valori iniziali (preset Personalizzato): piastra 100 × 70 × 4 mm, rilievo 0,8 mm, carta 0,12 mm, gioco verticale 0,1 mm, gioco laterale 0,15 mm, disegno largo 60 mm, perni 5 × 4 mm con gioco 0,30 mm per lato. La piastra deve misurare almeno 24 × 16 mm.
+
+Forma fissa delle piastre: angoli R6 mm, tacca di orientamento a 12 mm dal bordo sinistro sul lato superiore, perni centrati in altezza, con il centro a 7 mm dai bordi laterali, margine di sicurezza di 2 mm dal bordo per disegno e cavità.
+
+## Preset
+
+| Preset | Piastra | Foglio | Note |
+| --- | --- | --- | --- |
+| Personalizzato | libera | nessuno | Nessun ritaglio; disegno posizionato con 3 mm di margine in alto/basso. |
+| Biglietto da visita | 130 × 70 mm | 85 × 55 mm, centrato | Il perimetro rosso del foglio è solo una guida di anteprima e non viene esportato. Le parti del disegno oltre il foglio vengono tagliate senza deformazione; perni e fori devono restare fuori dal foglio. La cavità conserva il gioco laterale anche al bordo del foglio. |
+
+Scegliere un preset imposta i suoi valori iniziali, che restano modificabili.
 
 La profondità della cavità è calcolata come:
 
@@ -87,17 +106,20 @@ Le coordinate vengono uniformate su una griglia di 0,0001 mm. Le giunzioni a T r
 
 Il superamento del controllo non è una certificazione completa: non rileva ogni possibile auto-intersezione, errore di interpretazione dell’SVG o problema di stampa. Verifica comunque gli STL nello slicer.
 
-### Test cornice SVG
+### Test integrato
 
-Il pulsante **Test cornice SVG** esegue un test integrato su una cornice quadrata con foro quadrato, usando larghezze di 45 e 60 mm e giochi laterali di 0 e 0,1 mm. Vengono controllate otto mesh: quattro positive e quattro negative.
+Il pulsante **Test integrato** esegue nel browser una serie di controlli, senza sostituire il disegno caricato né modificare gli STL già generati:
 
-L’esito atteso è:
+- interpretazione dell’SVG: `fill-rule`, stili CSS, forme nascoste o senza riempimento, definizioni inutilizzate accettate ed elementi non supportati rifiutati;
+- cornice quadrata con foro, in modalità originale e con le due inversioni, a varie larghezze e giochi laterali;
+- preset biglietto da visita: ritaglio al foglio, guide fuori dal foglio, angoli R6, tacca e specchiatura;
+- controllo di spigoli e volume su tutte le mesh generate.
+
+L’esito atteso inizia con:
 
 ```text
-Test cornice superato: 8 mesh controllate.
+Test superato: 54 mesh controllate.
 ```
-
-Il test non sostituisce il disegno caricato né modifica gli STL già generati. Usa la posizione e l’opzione di specchiatura correntemente selezionate.
 
 Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `sheet-5` nel messaggio iniziale.
 
@@ -116,6 +138,18 @@ Dipendenze caricate da CDN:
 - clipper-lib 6.4.2.
 
 Non è una distribuzione completamente offline: per usarla senza rete occorre includere localmente le dipendenze e adattare i riferimenti agli script.
+
+## Sviluppo e test
+
+I test end-to-end aprono `index.html` in Chromium tramite Playwright. Durante i test le dipendenze CDN vengono servite da `node_modules`, con le stesse versioni esatte usate dall’app (il test fallisce se le versioni divergono), quindi non serve la rete dopo l’installazione.
+
+```bash
+npm ci
+npx playwright install chromium
+npm test
+```
+
+Vengono verificati l’avvio senza errori, il test integrato, l’export di STL binari validi, il blocco dell’export per SVG senza aree riempite e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
 
 ## GitHub Pages
 

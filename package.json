@@ -1,0 +1,14 @@
+{
+  "name": "svg-embosser-step",
+  "private": true,
+  "description": "Test end-to-end dell'app SVG → STL embosser",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "clipper-lib": "6.4.2",
+    "playwright": "1.63.0",
+    "three": "0.128.0"
+  }
+}
