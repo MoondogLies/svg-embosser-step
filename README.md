@@ -30,7 +30,9 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Rispetto di `fill-rule` (`nonzero`/`evenodd`) e degli stili CSS interni all’SVG.
 - Conversione degli stroke (contorni) in aree piene, con spessore, estremità e raccordi dell’SVG.
 - Scala dal campo «Larghezza disegno» oppure dalle dimensioni reali del file SVG (mm, cm, in, pt, pc).
-- Profilo **Bambu Lab A1 (ugello 0,4 mm)**: quote multiple del layer, pareti del rilievo inclinate, perni smussati, fori guida svasati contro l’elephant foot, avvisi sui dettagli troppo sottili, controllo del piano 256 × 256 mm.
+- **Scelta del materiale** (grammatura): spessore carta, giochi, altezza del rilievo e inclinazione calcolati per il risultato migliore, con avviso se il rilievo è troppo profondo per la carta.
+- **Preset personali**: salva, carica, elimina, esporta e importa tutte le impostazioni con un nome.
+- Profilo **Bambu Lab A1** con ugello selezionabile (0,2 / 0,4 / 0,6 / 0,8 mm): quote multiple del layer, pareti del rilievo inclinate, perni smussati, fori guida svasati contro l’elephant foot, avvisi sui dettagli troppo sottili, controllo del piano 256 × 256 mm.
 - Export 3MF con entrambe le piastre già disposte sul piano di stampa, oltre ai due STL.
 - Impostazioni salvate nel browser, trascinamento del file SVG sulla pagina, layout adatto al telefono.
 - Correzione delle giunzioni a T tramite suddivisione degli spigoli.
@@ -65,31 +67,70 @@ Sotto la pianta, l’anteprima **Foglio goffrato** mostra come dovrebbe apparire
 
 Le impostazioni restano salvate nel browser; **Valori predefiniti** le azzera e riapplica preset e profilo A1.
 
+## Materiale
+
+Il menu **Materiale** calcola i valori di partenza per carta e matrici; tutti restano modificabili. Ordine di applicazione: preset → profilo stampante (ugello) → materiale.
+
+| Materiale | Spessore | Rilievo massimo |
+| --- | --- | --- |
+| Carta 80–100 g/m² | ≈ 0,10 mm | 2 × spessore |
+| Carta 120 g/m² | ≈ 0,14 mm | 2 × |
+| Cartoncino 160 g/m² | ≈ 0,19 mm | 1,9 × |
+| Cartoncino 200 g/m² | ≈ 0,24 mm | 1,8 × |
+| Cartoncino 250 g/m² | ≈ 0,29 mm | 1,7 × |
+| Cartoncino 300 g/m² (predefinito) | ≈ 0,34 mm | 1,6 × |
+| Cartoncino 350 g/m² | ≈ 0,40 mm | 1,5 × |
+| Carta cotone / acquerello 300 g/m² | ≈ 0,45 mm, morbida | 1,8 × |
+| Spessore misurato | il valore di «Spessore carta» | 1,7 × |
+
+Dal materiale l’app ricava:
+
+- **spessore carta**: quello tipico (gli spessori reali variano: misura con il calibro e, se diverso, usa «Spessore misurato»);
+- **gioco laterale** = spessore + 0,1 mm + tolleranza dell’ugello (0 per 0,2–0,4; 0,05 per 0,6; 0,1 per 0,8);
+- **altezza rilievo** = spessore × rapporto, tra 0,3 e 0,8 mm, arrotondata **per difetto** a multipli del layer (almeno un layer): un rilievo troppo profondo costringe la carta a tirarsi dai lati e forma grinze intorno al rilievo;
+- **inclinazione pareti**: 15° sotto 0,2 mm, 20° fino a 0,3 mm, 25° oltre;
+- **gioco verticale** 0,1 mm.
+
+Con «Spessore misurato», modificando lo spessore carta i valori consigliati vengono ricalcolati. Se il rilievo supera 2,2 volte lo spessore della carta compare un avviso.
+
+Se compaiono grinze intorno al rilievo: verifica lo spessore reale della carta, riduci il rilievo, aumenta il gioco laterale e l’inclinazione, premi in modo uniforme (meglio una macchina a rulli) e prova a inumidire appena la carta.
+
 ## Stampa con Bambu Lab A1
 
-Il profilo stampante **Bambu Lab A1 – ugello 0,4 mm** è selezionato per impostazione predefinita e imposta:
+Il profilo stampante **Bambu Lab A1** è selezionato per impostazione predefinita; il menu **Ugello** (0,4 mm predefinito) adatta i valori:
 
-| Parametro | Valore | Perché |
-| --- | --- | --- |
-| Altezza layer | 0,16 mm | Corrisponde al profilo Bambu Studio «0.16mm Optimal @BBL A1». Spessore piastra, altezza rilievo e altezza perni diventano multipli del layer; la profondità della cavità viene arrotondata **per eccesso**, così il gioco verticale non si riduce. |
-| Inclinazione pareti rilievo | 15° | Il rilievo si restringe verso l’alto e la cavità si allarga verso la superficie: la carta si piega senza tagliarsi e le pareti si stampano senza sbalzi. Le pareti sono a gradini di un layer, come le stamperebbe comunque lo slicer. |
-| Smusso punta perni | 0,48 mm | Tre gradini da 0,16 mm in cima ai perni: l’inserimento nei fori è più facile anche con piccole bave. |
-| Svasatura base fori guida | 0,2 mm | Nei primi due layer i fori della positiva sono più larghi di 0,2 mm per lato: compensano l’elephant foot, che altrimenti stringerebbe il foro proprio dove entra il perno. |
-| Dettaglio minimo stampabile | 0,84 mm | Due linee d’estrusione da 0,42 mm. Parti del rilievo più sottili, fessure più strette e isole sottili della negativa vengono segnalate (non bloccate) ed evidenziate in arancione. |
-| Gioco laterale | 0,25 mm | Spessore carta più la tolleranza XY tipica della A1. |
-| Gioco per lato perni | 0,20 mm | Accoppiamento scorrevole ma preciso per la registrazione. |
+| Parametro | Ugello 0,2 | 0,4 | 0,6 | 0,8 | Perché |
+| --- | --- | --- | --- | --- | --- |
+| Altezza layer | 0,08 | 0,16 | 0,24 | 0,24 | Spessore piastra, rilievo, perni e battute diventano multipli del layer; la profondità di cavità e sedi viene arrotondata **per eccesso**. In Bambu Studio scegli un profilo con quell’altezza layer per il tuo ugello, o impostala a mano. |
+| Inclinazione pareti | 15° | 15° | 15° | 15° | Poi sostituita da quella del materiale. Pareti a gradini di un layer. |
+| Smusso punta perni | 0,24 | 0,48 | 0,48 | 0,48 | Due o tre gradini in cima ai perni per inserirli facilmente. |
+| Svasatura base fori guida | 0,2 | 0,2 | 0,25 | 0,3 | Compensa l’elephant foot nei primi due layer. |
+| Dettaglio minimo stampabile | 0,42 | 0,84 | 1,26 | 1,68 | Due linee d’estrusione: parti più sottili, fessure più strette e isole sottili vengono segnalate in arancione. |
+| Gioco per lato perni | 0,2 | 0,2 | 0,23 | 0,25 | Più gioco con ugelli meno precisi. |
+
+Con l’ugello 0,8 la stampa è più rapida e robusta, ma i dettagli fini del rilievo si perdono: usa tratti spessi (almeno 1,7 mm) e controlla gli avvisi.
 
 Il profilo controlla anche che la piastra entri nel piano di 256 × 256 mm. L’export 3MF affianca positiva e negativa sul piano (in colonna se non entrano affiancate); se non entrano nemmeno così, un avviso suggerisce di stamparle separatamente.
 
 In Bambu Studio:
 
 - importa il 3MF: Bambu Studio può avvisare che il file non proviene da Bambu Lab e caricare solo la geometria, che è quello che serve;
-- scegli il profilo di processo «0.16mm Optimal @BBL A1» e il filamento (PLA o PETG);
+- scegli l’ugello montato e un profilo di processo con l’altezza layer indicata, e il filamento (PLA o PETG);
 - lascia attiva la compensazione dell’elephant foot del profilo: la svasatura dei fori agisce in aggiunta, solo dove serve;
 - le piastre si stampano a faccia in su, così come sono esportate, senza supporti;
 - per superfici di rilievo più nitide puoi attivare lo stiratura («ironing») sulle superfici superiori.
 
 Scegliendo **Nessuna (valori manuali)** i parametri di stampa tornano ai valori del preset e le quote non vengono arrotondate.
+
+## Preset personali
+
+Nel riquadro **I miei preset**:
+
+- **Salva impostazioni attuali** memorizza con il nome indicato tutto lo stato: preset, stampante, ugello, materiale, tutti i parametri, battute e opzioni (non il disegno). Con un nome già esistente il preset viene aggiornato;
+- **Carica** riapplica un preset salvato, **Elimina** lo cancella;
+- **Esporta file** scarica `embosser_preset.json` con tutti i preset; **Importa file** li aggiunge (stessi nomi sovrascritti; i file non validi vengono rifiutati).
+
+I preset restano in questo browser: esportali per conservarli o usarli su un altro computer. Combinati con il preset **Personalizzato** e i campi **Larghezza/Altezza foglio** permettono di definire formati propri (cartoline, inviti, etichette) con ritaglio al foglio, battute e anteprima del foglio.
 
 I parametri aggiornano le mesh quando confermi la modifica del campo. Se un valore non è valido, il campo viene evidenziato in rosso e il messaggio indica il nome del parametro.
 
@@ -119,7 +160,7 @@ I parametri aggiornano le mesh quando confermi la modifica del campo. Se un valo
 | Inverti pieni/vuoti | Mette in rilievo i vuoti del disegno invece dei pieni. |
 | Area di inversione | **Contorno esterno**: rilievo nei vuoti interni delle sagome. **Rettangolo d’ingombro**: rilievo in tutti i vuoti entro l’ingombro del disegno. |
 
-Valori iniziali (preset Personalizzato, senza profilo stampante): piastra 100 × 70 × 4 mm, rilievo 0,8 mm, carta 0,12 mm, gioco verticale 0,1 mm, gioco laterale 0,15 mm, disegno largo 60 mm, perni 5 × 4 mm con gioco 0,30 mm per lato, parametri di stampa a 0. Il profilo A1, attivo per impostazione predefinita, sostituisce i valori indicati nella sezione dedicata. La piastra deve misurare almeno 24 × 16 mm.
+Valori iniziali (preset Personalizzato, senza profilo stampante): piastra 100 × 70 × 2 mm, rilievo 0,8 mm, carta 0,12 mm, gioco verticale 0,1 mm, gioco laterale 0,15 mm, disegno largo 60 mm, perni 5 × 2 mm con gioco 0,30 mm per lato, nessun foglio, parametri di stampa a 0. Il profilo A1 e il materiale (cartoncino 300 g/m²), attivi per impostazione predefinita, sostituiscono i valori indicati nelle sezioni dedicate. Lo spessore piastra predefinito è 2 mm (con layer 0,16 diventa 1,92 mm); i perni sono alti quanto la piastra, altrimenti sporgerebbero dal retro della positiva a matrici chiuse (c’è un avviso). La piastra deve misurare almeno 24 × 16 mm.
 
 ### Piastra e guide
 
@@ -139,8 +180,8 @@ I valori predefiniti riproducono esattamente la piastra delle versioni precedent
 
 | Preset | Piastra | Foglio | Note |
 | --- | --- | --- | --- |
-| Personalizzato | libera | nessuno | Nessun ritaglio; disegno posizionato con 3 mm di margine in alto/basso. |
-| Biglietto da visita | 130 × 70 mm | 85 × 55 mm, centrato | Il perimetro rosso del foglio è solo una guida di anteprima e non viene esportato. Le parti del disegno oltre il foglio vengono tagliate senza deformazione; perni e fori devono restare fuori dal foglio. La cavità conserva il gioco laterale anche al bordo del foglio. |
+| Personalizzato | libera | dai campi Larghezza/Altezza foglio (0 = nessuno) | Senza foglio nessun ritaglio; disegno posizionato a margine + 1 mm in alto/basso. Con un foglio: ritaglio, battute e anteprima del foglio come nei preset. |
+| Biglietto da visita | 130 × 70 × 2 mm, cartoncino 300 g/m² | 85 × 55 mm, centrato | Il perimetro rosso del foglio è solo una guida di anteprima e non viene esportato. Le parti del disegno oltre il foglio vengono tagliate senza deformazione; perni e fori devono restare fuori dal foglio. La cavità conserva il gioco laterale anche al bordo del foglio. |
 
 Scegliere un preset imposta i suoi valori iniziali, che restano modificabili.
 
@@ -158,7 +199,7 @@ L’app blocca la generazione se questa profondità è maggiore o uguale allo sp
 Il preset **J card musicassetta** goffra solo il **pannello frontale** di 101,6 × 63,5 mm (4" × 2,5"), con il dorso sul lato superiore. Le misure sono quelle standard: verificale sul template del tuo stampatore e, se diverse, modifica il preset in `js/config.js`.
 
 - Piastra 130 × 80 mm: dorso e aletta escono liberi oltre il bordo superiore della piastra. Sulla A1 le due piastre vanno in colonna nel 3MF.
-- Valori per cartoncino da 250–300 g/m² (circa 0,3 mm; misuralo con il calibro): rilievo 0,64 mm, gioco laterale 0,4 mm, pareti a 20°, dettaglio minimo 1 mm. Questi valori prevalgono anche su quelli del profilo stampante.
+- Materiale iniziale: cartoncino 250 g/m² (circa 0,29 mm; misuralo e scegli il materiale corretto). Con ugello 0,4: rilievo 0,48 mm, gioco laterale 0,39 mm, pareti a 20°.
 - Battute di riscontro agli **angoli inferiori**, così il dorso non incontra ostacoli.
 - Avviso se il disegno arriva a meno di 3 mm dal bordo o dalla piega del dorso.
 - Ordine consigliato: stampa → goffratura → cordonatura e piega.
@@ -225,7 +266,7 @@ L’esito atteso inizia con:
 Test superato: 74 mesh controllate.
 ```
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `jcard-1` nel messaggio di stato.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `materiali-1` nel messaggio di stato.
 
 ## File esportati
 
@@ -271,7 +312,7 @@ npx playwright install chromium
 npm test
 ```
 
-Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, l’anteprima e la finestra 3D del foglio, il preset J card e le battute di riscontro, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
+Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, l’export 3MF (struttura dell’archivio, due oggetti chiusi, posizione sul piano), il profilo A1, la conversione degli stroke, gli avvisi sui dettagli sottili, il salvataggio delle impostazioni, il trascinamento del file, la pianta 2D e i parametri di piastra e guide, l’anteprima e la finestra 3D del foglio, il preset J card e le battute di riscontro, materiale e ugello, i preset personali con esportazione e importazione, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
 
 ## GitHub Pages
 

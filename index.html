@@ -15,6 +15,9 @@ label{display:flex;flex-direction:column;gap:5px;margin:8px 0}
 label.check{flex-direction:row;align-items:center;gap:8px}
 input,select,button{font:inherit;padding:8px;border-radius:5px}
 input[type=number]{width:140px;box-sizing:border-box}
+input[type=text]{width:260px;max-width:100%;box-sizing:border-box}
+#myPresets{min-width:200px}
+label.file input{padding:4px}
 input[aria-invalid=true]{outline:2px solid #ff5050}
 button{cursor:pointer}
 button:disabled{cursor:default;opacity:.55}
@@ -71,10 +74,18 @@ dialog .note{margin:6px 12px}
 <div class="row">
 <label>Preset<select id="preset"><option value="custom">Personalizzato</option><option value="businessCard">Biglietto da visita 85 × 55 mm</option><option value="jCard">J card musicassetta – fronte 101,6 × 63,5 mm</option></select></label>
 <label>Stampante<select id="printer"></select></label>
+<label>Ugello<select id="nozzle"></select></label>
+<label>Materiale<select id="material"></select></label>
 <label>Scala del disegno<select id="scaleMode"><option value="fit">Da larghezza/altezza disegno</option><option value="file">Dimensioni reali del file SVG</option></select></label>
 </div>
 <p id="presetNote" class="note"></p>
 <p id="printerNote" class="note"></p>
+<p class="note">Scegliendo il materiale, spessore carta, giochi, altezza del rilievo e inclinazione delle pareti vengono ricalcolati per il risultato migliore con l’ugello scelto; restano modificabili.</p>
+<fieldset><legend>I miei preset</legend>
+<div class="row"><label>Nome<input id="myPresetName" type="text" maxlength="60" placeholder="es. Biglietti 350 g ugello 0,8"></label><button id="savePreset">Salva impostazioni attuali</button></div>
+<div class="row"><label>Preset salvati<select id="myPresets"></select></label><button id="loadPreset">Carica</button><button id="deletePreset">Elimina</button><button id="exportPresets">Esporta file</button><label class="file">Importa file<input id="importPresets" type="file" accept=".json,application/json"></label></div>
+<p id="myPresetsNote" class="note" aria-live="polite">Salva tutte le impostazioni (preset, stampante, ugello, materiale, parametri) con un nome; restano in questo browser. Esporta il file per conservarli o usarli su un altro computer.</p>
+</fieldset>
 <fieldset><legend>Matrici</legend><section id="params"></section></fieldset>
 <fieldset><legend>Piastra e guide</legend><section id="plateParams"></section></fieldset>
 <fieldset><legend>Battute di riscontro</legend><div class="row"><label>Battute<select id="stops"><option value="none">Nessuna</option><option value="bottom">Angoli inferiori (L)</option><option value="corners">Quattro angoli (L)</option></select></label></div><p id="stopsNote" class="note">Rilievi a «L» sulla positiva, appena fuori dal foglio, contro cui appoggiare la carta; sulla negativa ci sono le sedi corrispondenti. Disponibili solo con un preset che definisce il foglio.</p><section id="stopParams"></section></fieldset>

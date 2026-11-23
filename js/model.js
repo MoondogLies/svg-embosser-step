@@ -271,6 +271,13 @@
       if (diff(art, [rect(0, 0, opts.sheet.w - 2 * i, opts.sheet.h - 2 * i)]).length)
         warnings.push('Il disegno arriva a meno di ' + i + ' mm dal bordo del foglio' + (opts.sheet.overhang ? ' o dalla piega del dorso' : '') + ': rischi di deformare la piega o il bordo.');
     }
+    if (s.paper > 0 && H.r > 2.2 * s.paper + 1e-9)
+      warnings.push(
+        'Rilievo ' + (H.r / s.paper).toFixed(1).replace('.', ',') + ' volte lo spessore della carta: rischio di grinze intorno al rilievo e di strappi. ' +
+          'Consigliato al massimo 2 volte (scegli il materiale per i valori di partenza).',
+      );
+    if (H.ph > H.b + (s.paper || 0) + 1e-9)
+      warnings.push('Perni più alti dello spessore piastra: sporgono di ' + (H.ph - H.b - (s.paper || 0)).toFixed(2) + ' mm dal retro della positiva a matrici chiuse.');
     if (s.lateral < s.paper) warnings.push('Gioco laterale minore dello spessore carta: la carta potrebbe tagliarsi sui bordi della cavità.');
     if (H.L && Math.abs(H.r - s.r) > 1e-6) warnings.push('Altezza rilievo arrotondata a ' + H.r.toFixed(2) + ' mm (multiplo del layer).');
     if (H.L && Math.abs(H.b - s.b) > 1e-6) warnings.push('Spessore piastra arrotondato a ' + H.b.toFixed(2) + ' mm.');
@@ -400,7 +407,7 @@
     // Preset J card con battute di riscontro.
     {
       const jc = E.PRESETS.jCard,
-        values = { ...jc.values, ...E.PRINTERS.a1.values, ...jc.material },
+        values = { ...jc.values, ...E.PRINTERS.a1.values, ...E.materialValues(jc.defaultMaterial, 0, E.PRINTERS.a1.values.layer, 0.4) },
         hw = jc.sheet.w / 2,
         hh = jc.sheet.h / 2;
       let withStops = null;

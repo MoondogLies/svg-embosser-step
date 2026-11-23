@@ -4,8 +4,9 @@
   const $ = (id) => document.getElementById(id);
   const V = E.VERSION;
   const STORE = 'embosser-settings-v1';
+  const USER_PRESETS = 'embosser-user-presets-v1';
   const CHECKS = ['invert', 'mirror', 'strokes'];
-  const SELECTS = ['preset', 'printer', 'scaleMode', 'align', 'invertArea', 'stops'];
+  const SELECTS = ['preset', 'printer', 'nozzle', 'material', 'scaleMode', 'align', 'invertArea', 'stops'];
 
   let source = null,
     sourceText = null,
@@ -18,10 +19,18 @@
     sheetViewer = null,
     staleBuild = false; // un calcolo è stato annullato da un test e l'anteprima va rigenerata
 
+  // Foglio del preset; con «Personalizzato» quello indicato nei campi larghezza/altezza foglio (se entrambi > 0).
   const activeSheet = () => {
-    const p = E.PRESETS[$('preset').value];
+    const id = $('preset').value,
+      p = E.PRESETS[id];
+    if (id === 'custom') {
+      const w = Number($('sheetW').value),
+        h = Number($('sheetH').value);
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
     return (p && p.sheet) || null;
   };
+  const activeNozzle = () => Number($('nozzle').value) || 0.4;
   // Battute solo se il preset definisce un foglio.
   const activeStops = () => (activeSheet() ? $('stops').value : 'none');
   const activePrinter = () => E.PRINTERS[$('printer').value] || E.PRINTERS.none;
@@ -42,14 +51,33 @@
   };
   const mm = (x) => x.toFixed(2).replace(/\.?0+$/, '');
 
+  // Istantanea di tutte le impostazioni (per il salvataggio automatico e per i preset personali).
+  function snapshot() {
+    const data = { values: {}, checks: {}, selects: {} };
+    for (const [id] of E.PARAMS) data.values[id] = $(id).value;
+    for (const id of CHECKS) data.checks[id] = $(id).checked;
+    for (const id of SELECTS) data.selects[id] = $(id).value;
+    return data;
+  }
+  // Applica un'istantanea ignorando campi sconosciuti o valori non numerici.
+  function applySnapshot(data) {
+    if (!data || typeof data !== 'object' || !data.values || typeof data.values !== 'object') return false;
+    for (const [id] of E.PARAMS) {
+      const v = data.values[id];
+      if (v !== undefined && v !== null && String(v).trim() !== '' && Number.isFinite(Number(v))) $(id).value = String(Number(v));
+    }
+    for (const id of CHECKS) if (typeof (data.checks || {})[id] === 'boolean') $(id).checked = data.checks[id];
+    for (const id of SELECTS) {
+      const v = (data.selects || {})[id];
+      if (typeof v === 'string' && [...$(id).options].some((o) => o.value === v)) $(id).value = v;
+    }
+    refreshNotes();
+    return true;
+  }
   // Impostazioni salvate nel browser (localStorage può mancare: modalità privata, file://, blocchi).
   function save() {
     try {
-      const data = { values: {}, checks: {}, selects: {} };
-      for (const [id] of E.PARAMS) data.values[id] = $(id).value;
-      for (const id of CHECKS) data.checks[id] = $(id).checked;
-      for (const id of SELECTS) data.selects[id] = $(id).value;
-      localStorage.setItem(STORE, JSON.stringify(data));
+      localStorage.setItem(STORE, JSON.stringify(snapshot()));
     } catch (ignore) {}
   }
   function restore() {
@@ -57,14 +85,98 @@
     try {
       data = JSON.parse(localStorage.getItem(STORE) || 'null');
     } catch (ignore) {}
-    if (!data || !data.values) return false;
-    for (const [id] of E.PARAMS) if (data.values[id] !== undefined) $(id).value = data.values[id];
-    for (const id of CHECKS) if (typeof (data.checks || {})[id] === 'boolean') $(id).checked = data.checks[id];
-    for (const id of SELECTS) {
-      const v = (data.selects || {})[id];
-      if (v !== undefined && [...$(id).options].some((o) => o.value === v)) $(id).value = v;
+    return applySnapshot(data);
+  }
+
+  function refreshNotes() {
+    $('presetNote').textContent = (E.PRESETS[$('preset').value] || {}).note || '';
+    const printer = activePrinter();
+    $('printerNote').textContent = printer.note ? printer.note(activeNozzle()) : '';
+  }
+
+  // ---- Preset personali: salvati nel browser, esportabili e importabili come file JSON. ----
+  function userPresets() {
+    try {
+      const data = JSON.parse(localStorage.getItem(USER_PRESETS) || '{}');
+      return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    } catch (ignore) {
+      return {};
     }
-    return true;
+  }
+  function storeUserPresets(all) {
+    try {
+      localStorage.setItem(USER_PRESETS, JSON.stringify(all));
+      return true;
+    } catch (ignore) {
+      return false;
+    }
+  }
+  function listUserPresets(selected) {
+    const names = Object.keys(userPresets()).sort((a, b) => a.localeCompare(b, 'it'));
+    $('myPresets').replaceChildren(...names.map((n) => new Option(n, n)));
+    if (selected && names.includes(selected)) $('myPresets').value = selected;
+    for (const id of ['loadPreset', 'deletePreset']) $(id).disabled = !names.length;
+    $('exportPresets').disabled = !names.length;
+  }
+  function presetMessage(text) {
+    $('myPresetsNote').textContent = text;
+  }
+  function saveUserPreset() {
+    const name = $('myPresetName').value.trim().slice(0, 60);
+    if (!name) return presetMessage('Scrivi un nome per il preset.');
+    const all = userPresets(),
+      existed = name in all;
+    all[name] = snapshot();
+    if (!storeUserPresets(all)) return presetMessage('Impossibile salvare: il browser blocca l’archiviazione locale.');
+    listUserPresets(name);
+    presetMessage((existed ? 'Preset «' + name + '» aggiornato' : 'Preset «' + name + '» salvato') + ' in questo browser.');
+  }
+  function loadUserPreset() {
+    const name = $('myPresets').value,
+      data = userPresets()[name];
+    if (!data || !applySnapshot(data)) return presetMessage('Preset non valido.');
+    $('myPresetName').value = name;
+    fitted = false;
+    save();
+    presetMessage('Preset «' + name + '» caricato.');
+    if (sourceText) reparse();
+    else generate();
+  }
+  function deleteUserPreset() {
+    const name = $('myPresets').value,
+      all = userPresets();
+    if (!(name in all)) return;
+    delete all[name];
+    storeUserPresets(all);
+    listUserPresets();
+    presetMessage('Preset «' + name + '» eliminato.');
+  }
+  function exportUserPresets() {
+    const all = userPresets();
+    saveFile(new Blob([JSON.stringify({ app: 'svg-embosser', version: 1, presets: all }, null, 2)], { type: 'application/json' }), 'embosser_preset.json');
+  }
+  async function importUserPresets(file) {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text()),
+        incoming = data && data.presets;
+      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) throw Error('formato non riconosciuto');
+      const all = userPresets();
+      let count = 0;
+      for (const [name, preset] of Object.entries(incoming))
+        if (preset && typeof preset === 'object' && preset.values && typeof preset.values === 'object') {
+          all[String(name).slice(0, 60)] = preset;
+          count++;
+        }
+      if (!count) throw Error('nessun preset valido');
+      storeUserPresets(all);
+      listUserPresets();
+      presetMessage(count + ' preset importati.');
+    } catch (e) {
+      presetMessage('Importazione non riuscita: ' + e.message + '.');
+    } finally {
+      $('importPresets').value = '';
+    }
   }
 
   function invalid(id, message) {
@@ -175,6 +287,8 @@
 
   function syncControls() {
     $('invertArea').disabled = !$('invert').checked;
+    $('nozzle').disabled = !activePrinter().valuesFor;
+    $('sheetW').disabled = $('sheetH').disabled = $('preset').value !== 'custom';
     const sheet = !!activeSheet();
     $('stops').disabled = !sheet;
     const stopFields = sheet && $('stops').value !== 'none';
@@ -246,7 +360,8 @@
     }
     setWarnings(warnings);
     status(
-      V + ': entrambe le mesh superano il controllo degli spigoli. Disegno ' + mm(r.size[0]) + ' × ' + mm(r.size[1]) + ' mm. ' +
+      V + ': entrambe le mesh superano il controllo degli spigoli. Materiale: ' + $('material').selectedOptions[0].textContent +
+        (activePrinter().valuesFor ? '; ugello ' + String(activeNozzle()).replace('.', ',') + ' mm' : '') + '. Disegno ' + mm(r.size[0]) + ' × ' + mm(r.size[1]) + ' mm. ' +
         'Quote: piastra ' + mm(H.b) + ', rilievo ' + mm(H.r) + ', cavità ' + mm(r.depth) + ', perni ' + mm(H.ph) + ' mm' +
         (H.L ? ' (multipli del layer ' + mm(H.L) + ' mm)' : '') + '. Volumi ' + r.volumes[0].toFixed(1) + ' / ' + r.volumes[1].toFixed(1) +
         ' mm³. Rilievo: ' + (opts.invert ? 'vuoti, ' + $('invertArea').selectedOptions[0].textContent : 'pieni SVG') + '.' +
@@ -296,37 +411,49 @@
     }
   }
 
+  // Valori consigliati per carta e stampa (rilievo, giochi, inclinazione) dal materiale scelto.
+  function applyMaterialValues() {
+    const layer = activePrinter().valuesFor ? Number($('layer').value) || 0 : 0;
+    const values = E.materialValues($('material').value, Number($('paper').value), layer, activeNozzle());
+    for (const [id, value] of Object.entries(values)) $(id).value = value;
+  }
+
+  // Ordine di precedenza: preset → profilo stampante (ugello) → materiale.
   function applyPrinterValues() {
     const printer = activePrinter();
-    $('printerNote').textContent = printer.note || '';
-    if (printer.values) for (const [id, value] of Object.entries(printer.values)) $(id).value = value;
-    // I valori del materiale del preset (es. cartoncino della J card) prevalgono sul profilo stampante.
-    const preset = E.PRESETS[$('preset').value] || {};
-    if (preset.material) for (const [id, value] of Object.entries(preset.material)) $(id).value = value;
+    if (printer.valuesFor) for (const [id, value] of Object.entries(printer.valuesFor(activeNozzle()))) $(id).value = value;
+    applyMaterialValues();
+    refreshNotes();
   }
 
   function applyPreset() {
     const p = E.PRESETS[$('preset').value];
     if (!p) return;
-    $('presetNote').textContent = p.note || '';
     if (p.values) {
       for (const [id, value] of Object.entries(p.values)) $(id).value = value;
       if (p.align) $('align').value = p.align;
     }
     if (p.stops) $('stops').value = p.stops;
-    applyPrinterValues(); // il profilo stampante ha la precedenza sui valori del preset
+    if (p.defaultMaterial) $('material').value = p.defaultMaterial;
+    applyPrinterValues();
     fitted = false;
     save();
     generate();
   }
 
   function applyPrinter() {
-    // Senza profilo: i valori impostati dal profilo A1 tornano a quelli del preset (o iniziali).
-    if (!activePrinter().values) {
+    // Senza profilo: i valori di stampa tornano a quelli del preset (o iniziali).
+    if (!activePrinter().valuesFor) {
       const preset = E.PRESETS[$('preset').value].values || {};
       for (const [id, , value] of E.PARAMS) if (id in E.PRINTERS.a1.values) $(id).value = preset[id] ?? value;
     }
     applyPrinterValues();
+    save();
+    generate();
+  }
+
+  function applyMaterial() {
+    applyMaterialValues();
     save();
     generate();
   }
@@ -337,6 +464,8 @@
     } catch (ignore) {}
     for (const [id, , value] of E.PARAMS) $(id).value = value;
     $('printer').value = 'a1';
+    $('nozzle').value = '0.4';
+    $('material').value = 'card300';
     $('scaleMode').value = 'fit';
     $('strokes').checked = $('mirror').checked = true;
     $('invert').checked = false;
@@ -406,6 +535,10 @@
     }
     for (const [id, printer] of Object.entries(E.PRINTERS)) $('printer').append(new Option(printer.name, id));
     $('printer').value = 'a1';
+    for (const n of E.PRINTERS.a1.nozzles) $('nozzle').append(new Option(String(n).replace('.', ',') + ' mm', String(n)));
+    $('nozzle').value = '0.4';
+    for (const [id, m] of Object.entries(E.MATERIALS)) $('material').append(new Option(m.name, id));
+    $('material').value = 'card300';
     if (!window.ClipperLib || !window.THREE || !THREE.SVGLoader || !THREE.OrbitControls)
       throw Error('Dipendenza CDN non caricata: verificare connessione Internet o blocchi del browser verso cdn.jsdelivr.net.');
     viewer = E.createViewer($('view'));
@@ -431,6 +564,19 @@
       generate();
     };
     for (const [id] of E.PARAMS) $(id).onchange = changed;
+    // Con «Spessore misurato» i valori consigliati seguono lo spessore inserito.
+    $('paper').onchange = () => {
+      if ($('material').value === 'measured') applyMaterialValues();
+      changed();
+    };
+    $('nozzle').onchange = applyPrinter;
+    $('material').onchange = applyMaterial;
+    $('savePreset').onclick = saveUserPreset;
+    $('loadPreset').onclick = loadUserPreset;
+    $('deletePreset').onclick = deleteUserPreset;
+    $('exportPresets').onclick = exportUserPresets;
+    $('importPresets').onchange = (e) => importUserPresets(e.target.files[0]);
+    listUserPresets();
     for (const id of ['align', 'mirror', 'invert', 'invertArea', 'scaleMode', 'stops']) $(id).onchange = changed;
     $('strokes').onchange = reparse;
     $('preset').onchange = applyPreset;
@@ -450,11 +596,8 @@
     $('sheetFlip').onclick = () => sheetViewer && sheetViewer.flip();
     $('sheetFrame').onclick = () => sheetViewer && sheetViewer.frame();
     $('sheetExaggeration').onchange = () => sheetViewer && sheetViewer.exaggerate(Number($('sheetExaggeration').value));
-    if (restore()) {
-      $('presetNote').textContent = (E.PRESETS[$('preset').value] || {}).note || '';
-      $('printerNote').textContent = activePrinter().note || '';
-      generate();
-    } else applyPreset();
+    if (restore()) generate();
+    else applyPreset();
   }
 
   try {

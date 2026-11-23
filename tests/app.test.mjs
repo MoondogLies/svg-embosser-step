@@ -181,7 +181,7 @@ test('profilo A1: quote multiple del layer ed export 3MF con due oggetti chiusi 
   assert.match(text, /multipli del layer 0\.16 mm/, text);
   const depth = Number(text.match(/cavità ([\d.]+)/)[1]);
   assert.ok(Math.abs(depth / 0.16 - Math.round(depth / 0.16)) < 1e-6, 'cavità multipla del layer: ' + depth);
-  assert.match(text, /Pareti inclinate di 15°/);
+  assert.match(text, /Pareti inclinate di 25°/); // cartoncino 300 g/m² predefinito
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#both')]);
   assert.equal(download.suggestedFilename(), 'embosser_matrici.3mf');
   const files = unzipStored(fs.readFileSync(await download.path()));
@@ -227,16 +227,19 @@ test('dettagli più sottili dell’ugello generano un avviso', async () => {
 test('le impostazioni restano dopo il ricaricamento e «Valori predefiniti» le azzera', async () => {
   const { page, context } = await openApp();
   await page.selectOption('#preset', 'custom');
-  await page.evaluate(() => { const r = document.getElementById('r'); r.value = '0.64'; r.dispatchEvent(new Event('change')); });
   await page.selectOption('#printer', 'none');
+  await page.evaluate(() => { const r = document.getElementById('r'); r.value = '0.64'; r.dispatchEvent(new Event('change')); });
   await page.reload();
   await page.waitForFunction(() => document.getElementById('status').textContent.length > 0);
   assert.equal(await page.inputValue('#r'), '0.64');
   assert.equal(await page.inputValue('#printer'), 'none');
   assert.equal(await page.inputValue('#layer'), '0');
   await page.click('#reset');
-  assert.equal(await page.inputValue('#r'), '0.8');
+  assert.equal(await page.inputValue('#r'), '0.48'); // cartoncino 300 g/m², layer 0,16
+  assert.equal(await page.inputValue('#b'), '2');
   assert.equal(await page.inputValue('#printer'), 'a1');
+  assert.equal(await page.inputValue('#nozzle'), '0.4');
+  assert.equal(await page.inputValue('#material'), 'card300');
   assert.equal(await page.inputValue('#layer'), '0.16');
   await context.close();
 });
@@ -355,9 +358,11 @@ test('anteprima del foglio goffrato e finestra 3D coerenti con il preset', async
 test('preset J card: cartoncino, battute agli angoli inferiori, sedi e avvisi', async () => {
   const { page, context, status, errors } = await openApp();
   await page.selectOption('#preset', 'jCard');
-  // I valori del cartoncino prevalgono sul profilo A1.
-  assert.equal(await page.inputValue('#paper'), '0.3');
-  assert.equal(await page.inputValue('#lateral'), '0.4');
+  // Materiale iniziale della J card: cartoncino 250 g/m²; i suoi valori prevalgono sul profilo A1.
+  assert.equal(await page.inputValue('#material'), 'card250');
+  assert.equal(await page.inputValue('#paper'), '0.29');
+  assert.equal(await page.inputValue('#lateral'), '0.39');
+  assert.equal(await page.inputValue('#r'), '0.48');
   assert.equal(await page.inputValue('#draft'), '20');
   assert.equal(await page.inputValue('#stops'), 'bottom');
   assert.equal(await page.isDisabled('#stops'), false);
@@ -384,6 +389,84 @@ test('preset J card: cartoncino, battute agli angoli inferiori, sedi e avvisi', 
   await page.selectOption('#preset', 'custom');
   assert.equal(await page.isDisabled('#stops'), true);
   assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('materiale e ugello calcolano i valori di partenza; avviso sul rilievo troppo profondo', async () => {
+  const { page, context, status } = await openApp();
+  await page.selectOption('#preset', 'businessCard');
+  const v = (id) => page.inputValue('#' + id);
+  // Cartoncino 350 g/m² con ugello 0,8: layer 0,24, giochi più larghi, rilievo ≤ 1,5 × carta per difetto a multipli del layer.
+  await page.selectOption('#nozzle', '0.8');
+  await page.selectOption('#material', 'card350');
+  assert.equal(await v('layer'), '0.24');
+  assert.equal(await v('paper'), '0.4');
+  assert.equal(await v('lateral'), '0.6');
+  assert.equal(await v('r'), '0.48');
+  assert.equal(await v('draft'), '25');
+  assert.equal(await v('minFeature'), '1.68');
+  assert.equal(await v('pg'), '0.25');
+  // Carta sottile con ugello 0,4.
+  await page.selectOption('#nozzle', '0.4');
+  await page.selectOption('#material', 'paper120');
+  assert.equal(await v('paper'), '0.14');
+  assert.equal(await v('lateral'), '0.24');
+  assert.equal(await v('r'), '0.16');
+  assert.equal(await v('draft'), '15');
+  // Spessore misurato: i valori seguono il campo.
+  await page.selectOption('#material', 'measured');
+  await page.evaluate(() => { const p = document.getElementById('paper'); p.value = '0.25'; p.dispatchEvent(new Event('change')); });
+  assert.equal(await v('lateral'), '0.35');
+  assert.equal(await v('r'), '0.32');
+  // Rilievo esagerato a mano: avviso grinze.
+  await loadSvg(page, svg('<rect x="10" y="10" width="80" height="80"/>'));
+  await waitStatus(page, DONE);
+  await page.evaluate(() => { const r = document.getElementById('r'); r.value = '0.8'; r.dispatchEvent(new Event('change')); });
+  await waitStatus(page, DONE);
+  assert.match(await status(), /superano il controllo/, await status());
+  assert.match(await page.textContent('#warnings'), /volte lo spessore della carta: rischio di grinze/);
+  await context.close();
+});
+
+test('preset personali: salva, ricarica dopo il riavvio, carica, esporta, importa, elimina', async () => {
+  const { page, context } = await openApp();
+  await page.selectOption('#preset', 'custom');
+  const setValue = (id, value) => page.evaluate(([id, value]) => { const el = document.getElementById(id); el.value = value; el.dispatchEvent(new Event('change')); }, [id, value]);
+  await setValue('sheetW', '90');
+  await setValue('sheetH', '50');
+  await page.selectOption('#nozzle', '0.8');
+  await page.selectOption('#stops', 'corners');
+  await page.fill('#myPresetName', 'Cartolina 0,8');
+  await page.click('#savePreset');
+  assert.match(await page.textContent('#myPresetsNote'), /salvato/);
+  // Il foglio personalizzato abilita battute e anteprima del foglio.
+  assert.match(await page.textContent('#sheetNote'), /Foglio 90 × 50 mm/);
+  // Cambio impostazioni e ricarico la pagina: il preset c'è ancora e si ricarica.
+  await page.selectOption('#preset', 'businessCard');
+  await page.selectOption('#nozzle', '0.4');
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById('status').textContent.length > 0);
+  assert.deepEqual(await page.$$eval('#myPresets option', (o) => o.map((x) => x.value)), ['Cartolina 0,8']);
+  await page.click('#loadPreset');
+  assert.equal(await page.inputValue('#preset'), 'custom');
+  assert.equal(await page.inputValue('#nozzle'), '0.8');
+  assert.equal(await page.inputValue('#sheetW'), '90');
+  assert.equal(await page.inputValue('#stops'), 'corners');
+  // Esporta, elimina, reimporta.
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#exportPresets')]);
+  const file = await download.path();
+  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(json.presets['Cartolina 0,8'].values);
+  await page.click('#deletePreset');
+  assert.equal(await page.locator('#myPresets option').count(), 0);
+  assert.equal(await page.isDisabled('#loadPreset'), true);
+  await page.setInputFiles('#importPresets', file);
+  await page.waitForFunction(() => /importati/.test(document.getElementById('myPresetsNote').textContent));
+  assert.equal(await page.locator('#myPresets option').count(), 1);
+  // Un file non valido viene rifiutato senza toccare i preset.
+  await page.setInputFiles('#importPresets', { name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"foo":1}') });
+  await page.waitForFunction(() => /non riuscita/.test(document.getElementById('myPresetsNote').textContent));
+  assert.equal(await page.locator('#myPresets option').count(), 1);
   await context.close();
 });
 
