@@ -6,7 +6,7 @@ Applicazione web per generare una coppia di matrici per embossing su carta a par
 
 [Avvia su GitHub Pages](https://moondoglies.github.io/svg-embosser-step/)
 
-Non servono installazioni, un backend o un server locale. Il file di ingresso è `index.html`; può essere aperto anche direttamente nel browser. Serve una connessione Internet per caricare le librerie dai CDN.
+Non servono installazioni, un backend o un server locale. Il file di ingresso è `index.html`; può essere aperto anche direttamente nel browser (doppio clic, `file://`), purché la cartella `js/` resti accanto. Aperta da `file://` l’app calcola le mesh nella pagina invece che nel Web Worker, quindi con disegni complessi l’interfaccia può bloccarsi per qualche secondo durante il calcolo. Serve una connessione Internet per caricare le librerie dai CDN.
 
 Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’app non carica l’SVG su un server.
 
@@ -121,7 +121,7 @@ L’esito atteso inizia con:
 Test superato: 54 mesh controllate.
 ```
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `sheet-5` nel messaggio iniziale.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione attuale mostra `sheet-6` nel messaggio di stato.
 
 ## File esportati
 
@@ -130,18 +130,32 @@ Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento 
 
 ## Struttura e dipendenze
 
-L’applicazione è contenuta in `index.html`. Non richiede una fase di build.
+Non richiede una fase di build: `index.html` carica script classici (non moduli ES), che funzionano anche da `file://`. Ogni file aggiunge il proprio modulo al namespace globale `Embosser`.
+
+| File | Contenuto | Dove gira |
+| --- | --- | --- |
+| `js/config.js` | Revisione, parametri con valori iniziali, preset | pagina e worker |
+| `js/geometry.js` | Operazioni 2D con Clipper: unione, differenza, offset, piastra R6 con tacca, inversione, ritaglio al foglio | pagina e worker |
+| `js/mesh.js` | Mesh a strati, triangolazione dei tappi, riparazione delle giunzioni a T, verifica, scrittura STL binario | pagina e worker |
+| `js/model.js` | Posizionamento del disegno, controlli su guide e margini, generazione delle due matrici, test geometrici; nessun accesso al DOM | pagina e worker |
+| `js/svg.js` | Lettura dell’SVG: stili CSS, `fill-rule`, elementi non supportati, test di interpretazione | solo pagina (serve `DOMParser`) |
+| `js/engine.js` | Invio dei calcoli al worker, annullamento del calcolo superato da una modifica più recente, ripiego nella pagina | pagina |
+| `js/worker.js` | Web Worker che esegue generazione e test geometrici | worker |
+| `js/viewer.js` | Anteprima 3D Three.js | pagina |
+| `js/app.js` | Interfaccia: campi, preset, stato, export | pagina |
+
+Flusso: la pagina legge l’SVG in dati semplici, il worker genera e verifica le mesh e le restituisce come `Float32Array` trasferiti senza copia; anteprima ed export usano gli stessi triangoli. Se si modifica un parametro mentre un calcolo è in corso, il worker viene terminato e il calcolo riparte con i valori nuovi.
 
 Dipendenze caricate da CDN:
 
 - Three.js 0.128.0, inclusi OrbitControls e SVGLoader.
 - clipper-lib 6.4.2.
 
-Non è una distribuzione completamente offline: per usarla senza rete occorre includere localmente le dipendenze e adattare i riferimenti agli script.
+Non è una distribuzione completamente offline: per usarla senza rete occorre includere localmente le dipendenze e adattare i riferimenti agli script, sia in `index.html` sia in `js/worker.js` (le due liste devono coincidere; i test lo verificano).
 
 ## Sviluppo e test
 
-I test end-to-end aprono `index.html` in Chromium tramite Playwright. Durante i test le dipendenze CDN vengono servite da `node_modules`, con le stesse versioni esatte usate dall’app (il test fallisce se le versioni divergono), quindi non serve la rete dopo l’installazione.
+I test end-to-end aprono l’app in Chromium tramite Playwright, sia da un piccolo server HTTP locale (calcolo nel Web Worker) sia da `file://` (calcolo nella pagina). Durante i test le dipendenze CDN vengono servite da `node_modules`, con le stesse versioni esatte usate dall’app (il test fallisce se le versioni divergono), quindi non serve la rete dopo l’installazione.
 
 ```bash
 npm ci
@@ -149,11 +163,11 @@ npx playwright install chromium
 npm test
 ```
 
-Vengono verificati l’avvio senza errori, il test integrato, l’export di STL binari validi, il blocco dell’export per SVG senza aree riempite e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
+Vengono verificati l’avvio senza errori, l’uso effettivo del worker e il ripiego da `file://`, il test integrato in entrambe le modalità, l’export di STL binari validi, il blocco dell’export per SVG senza aree riempite, la propagazione degli errori dal worker, l’annullamento dei calcoli superati e i messaggi d’errore dei parametri. Il workflow `.github/workflows/test.yml` esegue gli stessi test a ogni push e pull request.
 
 ## GitHub Pages
 
-Per pubblicare direttamente il file dalla repository, configura **Settings → Pages → Deploy from a branch**, selezionando `main` e `/ (root)`. `index.html` è la pagina iniziale.
+Per pubblicare direttamente l’app dalla repository (`index.html` e cartella `js/`), configura **Settings → Pages → Deploy from a branch**, selezionando `main` e `/ (root)`. `index.html` è la pagina iniziale.
 
 ## Licenza
 
