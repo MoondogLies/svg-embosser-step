@@ -533,6 +533,8 @@
         const zs = r.positive.concat(r.negative).map((p) => p[2]);
         if (Math.abs(Math.min(...zs)) > 1e-6) throw Error(label + ': le piastre non appoggiano sul piano.');
         if (Math.abs(r.hinge.zh - (r.heights.b + values.paper / 2)) > 1e-9) throw Error(label + ': asse della cerniera fuori quota.');
+        // A cerniera chiusa il pacchetto è spesso 2·zh: nulla deve sporgere oltre (si preme sul tavolo).
+        if (Math.max(...zs) > 2 * r.hinge.zh + 1e-6) throw Error(label + ': la cerniera chiusa sporge oltre le piastre.');
       }
       for (const [values, extra, pattern] of [
         [{ ...a1, ...hv, aw: 60 }, { sheet, bed, hinge: 'right' }, /oltre il piano di stampa/],

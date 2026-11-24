@@ -550,6 +550,9 @@ test('cerniera print-in-place: un solo STL con due corpi chiusi, nessun perno, p
   assert.equal(info.open, 0, 'STL chiuso');
   assert.equal(info.shells, 2, 'positiva e negativa sono due corpi separati');
   assert.ok(Math.abs(info.z[0]) < 1e-3, 'appoggiato sul piano');
+  // Spessore del pacchetto chiuso = 2 × quota dell'asse: la cerniera non deve superarlo.
+  const zh = Number(text.match(/asse a ([\d,]+) mm/)[1].replace(',', '.'));
+  assert.ok(info.z[1] <= 2 * zh + 0.011, `cerniera più alta del pacchetto chiuso: ${info.z[1]} > ${2 * zh}`);
   assert.ok(info.x[1] - info.x[0] <= 256 && info.y[1] - info.y[0] <= 256, 'entra nel piano A1');
   assert.ok(info.y[1] - info.y[0] > 2 * 70, 'piastre una sopra l’altra');
   const [d3mf] = await Promise.all([page.waitForEvent('download'), page.click('#both')]);

@@ -115,9 +115,11 @@
   }
 
   // Profili nel piano XZ (X orizzontale, Y del profilo = quota Z).
+  // I nodi sono tagliati tra 0 e 2·zh, simmetrici rispetto all'asse: base piatta sul piano di stampa e,
+  // a cerniera chiusa, nessuna sporgenza oltre le due facce esterne del pacchetto (spessore 2·zh).
   function profiles(H, b) {
     const bI = Math.round(b * S),
-      ground = [box(-2 * H.eI, 0, 2 * H.eI, Math.round((H.zh + H.R + 1) * S))],
+      ground = [box(-2 * H.eI, 0, 2 * H.eI, Math.round(2 * H.zh * S))],
       disk = circle(0, H.zh, H.R),
       bore = [circle(0, H.zh, H.rp + H.hc)];
     return {
