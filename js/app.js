@@ -6,7 +6,8 @@
   const STORE = 'embosser-settings-v1';
   const USER_PRESETS = 'embosser-user-presets-v1';
   const CHECKS = ['invert', 'mirror', 'strokes'];
-  const SELECTS = ['preset', 'printer', 'nozzle', 'material', 'scaleMode', 'align', 'invertArea', 'stops'];
+  const SELECTS = ['preset', 'printer', 'nozzle', 'material', 'scaleMode', 'align', 'invertArea', 'stops', 'hinge'];
+  const PIN_FIELDS = ['pin', 'ph', 'pg', 'pinInset', 'pinY', 'pinChamfer', 'holeFlare'];
 
   let source = null,
     sourceText = null,
@@ -34,6 +35,18 @@
   // Battute solo se il preset definisce un foglio.
   const activeStops = () => (activeSheet() ? $('stops').value : 'none');
   const activePrinter = () => E.PRINTERS[$('printer').value] || E.PRINTERS.none;
+  // Lato della cerniera print-in-place, oppure null con le piastre separate.
+  const activeHinge = () => ($('hinge').value === 'right' || $('hinge').value === 'bottom' ? $('hinge').value : null);
+  // Disposizione della cerniera per l'anteprima senza disegno (null se i parametri non la permettono).
+  const hingePreview = (s) => {
+    const side = activeHinge();
+    if (!side) return null;
+    try {
+      return E.hinge.layout(s, E.model.heights(s).b, side);
+    } catch (ignore) {
+      return null;
+    }
+  };
   const fieldName = (id) => {
     const d = E.PARAMS.find((x) => x[0] === id);
     return d ? '«' + d[1] + '»' : id;
@@ -43,7 +56,7 @@
     $('warnings').replaceChildren(...list.map((w) => Object.assign(document.createElement('li'), { textContent: w })));
   };
   const setExports = (enabled) => {
-    for (const id of ['male', 'female', 'both']) $(id).disabled = !enabled;
+    for (const id of ['male', 'female', 'both', 'hingeStl']) $(id).disabled = !enabled;
   };
   const setBusy = (busy) => {
     $('view').setAttribute('aria-busy', busy ? 'true' : 'false');
@@ -204,6 +217,7 @@
   }
 
   const options = (s) => ({
+    hinge: activeHinge(),
     s,
     align: $('align').value,
     invert: $('invert').checked,
@@ -272,7 +286,9 @@
     if (viewer) {
       viewer.clear();
       try {
-        viewer.sheet(settings(), activeSheet());
+        const s = settings();
+        viewer.setLayout(s, hingePreview(s));
+        viewer.sheet(s, activeSheet());
       } catch (ignore) {}
     }
     showPlatePlan();
@@ -295,6 +311,15 @@
     for (const [id, , , , group] of E.PARAMS) if (group === 'stops') $(id).disabled = !stopFields;
     const file = $('scaleMode').value === 'file';
     $('aw').disabled = $('ah').disabled = file;
+    // Cerniera: niente perni, negativa sempre specchiata, un unico file da esportare.
+    const hinge = !!activeHinge();
+    for (const id of PIN_FIELDS) $(id).disabled = hinge;
+    for (const [id, , , , group] of E.PARAMS) if (group === 'hinge') $(id).disabled = !hinge;
+    if (hinge) $('mirror').checked = true;
+    $('mirror').disabled = hinge;
+    $('male').hidden = $('female').hidden = hinge;
+    $('hingeStl').hidden = $('foldBox').hidden = !hinge;
+    $('both').textContent = hinge ? 'Esporta 3MF (piastre con cerniera)' : 'Esporta 3MF (entrambe sul piano)';
   }
 
   async function generate() {
@@ -309,6 +334,7 @@
     if (!source) {
       models = [];
       viewer.clear();
+      viewer.setLayout(s, hingePreview(s));
       viewer.sheet(s, activeSheet());
       if (viewer.count) viewer.fit();
       setWarnings([]);
@@ -338,13 +364,14 @@
     setBusy(false);
     viewer.clear();
     models = [r.positive, r.negative];
-    lastBuild = { s, bed: opts.bed };
+    lastBuild = { s, bed: opts.bed, hinge: r.hinge };
     const H = r.heights;
-    viewer.show(r.positive, 0xd4d8df, -s.w / 2 - 8);
-    viewer.show(r.negative, 0x93bad8, s.w / 2 + 8);
+    viewer.setLayout(s, r.hinge);
+    viewer.show(r.positive, 0xd4d8df, 'positive');
+    viewer.show(r.negative, 0x93bad8, 'negative');
     viewer.sheet(s, opts.sheet);
-    viewer.thin(r.thin.positive, -s.w / 2 - 8, H.b + H.r + 0.06);
-    viewer.thin(r.thin.negative, s.w / 2 + 8, H.b + 0.06);
+    viewer.thin(r.thin.positive, 'positive', H.b + H.r + 0.06);
+    viewer.thin(r.thin.negative, 'negative', H.b + 0.06);
     E.renderPlan($('plan'), { s, sheet: opts.sheet, plan: r.plan, thin: r.thin });
     updateSheet(r.plan.positive.relief, { ...s, r: H.r }, opts.sheet);
     if (sheetViewer) openSheet(); // la finestra aperta segue le modifiche
@@ -354,21 +381,32 @@
     }
     setExports(true);
     const warnings = [...(source.warnings || []), ...r.warnings];
-    if (opts.bed) {
+    if (opts.bed && !r.hinge) {
       const place = E.export3mf.layout([s.w, s.h], opts.bed);
       if (!place.fits) warnings.push('Le due piastre non entrano insieme sul piano ' + opts.bed.w + ' × ' + opts.bed.h + ' mm: stampale separatamente.');
     }
     setWarnings(warnings);
+    const hi = r.hinge,
+      comma = (x) => mm(x).replace('.', ',');
     status(
-      V + ': entrambe le mesh superano il controllo degli spigoli. Materiale: ' + $('material').selectedOptions[0].textContent +
+      V + ': entrambe le mesh superano il controllo degli spigoli.' +
+        (hi
+          ? ' Piastre unite da cerniera print-in-place sul lato ' + (hi.side === 'bottom' ? 'inferiore' : 'destro') + ': ' + hi.n + ' nodi da ' + comma(hi.seg) +
+            ' mm, asse a ' + comma(hi.zh) + ' mm dal piano, nodi Ø ' + comma(hi.knuckleD) + ' mm, perno Ø ' + comma(hi.pinD) + ' mm in foro Ø ' + comma(hi.boreD) +
+            ' mm; nessuna interferenza da 0° a 180°. Ingombro ' + comma(hi.footprint[0]) + ' × ' + comma(hi.footprint[1]) + ' mm. ' +
+            'Stampa così com’è, senza supporti, poi sblocca la cerniera ruotandola con delicatezza. A cerniera chiusa le facce restano distanti quanto lo spessore carta.'
+          : '') +
+        ' Materiale: Materiale: ' + $('material').selectedOptions[0].textContent +
         (activePrinter().valuesFor ? '; ugello ' + String(activeNozzle()).replace('.', ',') + ' mm' : '') + '. Disegno ' + mm(r.size[0]) + ' × ' + mm(r.size[1]) + ' mm. ' +
         'Quote: piastra ' + mm(H.b) + ', rilievo ' + mm(H.r) + ', cavità ' + mm(r.depth) + ', perni ' + mm(H.ph) + ' mm' +
         (H.L ? ' (multipli del layer ' + mm(H.L) + ' mm)' : '') + '. Volumi ' + r.volumes[0].toFixed(1) + ' / ' + r.volumes[1].toFixed(1) +
         ' mm³. Rilievo: ' + (opts.invert ? 'vuoti, ' + $('invertArea').selectedOptions[0].textContent : 'pieni SVG') + '.' +
         (r.cut ? ' Disegno tagliato al perimetro del foglio.' : '') +
         (s.draft ? ' Pareti inclinate di ' + s.draft + '°.' : '') +
-        ' Fori guida ' + (s.pin + 2 * s.pg).toFixed(2) + ' mm' + (s.holeFlare ? ', svasati di ' + s.holeFlare + ' mm alla base' : '') +
-        (s.pinChamfer ? '; perni smussati di ' + s.pinChamfer + ' mm' : '') + '.' +
+        (hi
+          ? ''
+          : ' Fori guida ' + (s.pin + 2 * s.pg).toFixed(2) + ' mm' + (s.holeFlare ? ', svasati di ' + s.holeFlare + ' mm alla base' : '') +
+            (s.pinChamfer ? '; perni smussati di ' + s.pinChamfer + ' mm' : '') + '.') +
         (H.stopH ? ' Battute di riscontro ' + ({ bottom: 'agli angoli inferiori', corners: 'ai quattro angoli' }[opts.stops] || '') + ', alte ' + mm(H.stopH) + ' mm, sedi sulla negativa profonde ' + mm(H.recessDepth) + ' mm.' : ''),
     );
   }
@@ -393,10 +431,31 @@
     }
   }
 
+  // Positiva e negativa con la cerniera: un unico STL con due corpi chiusi, già incastrati.
+  const joined = () => {
+    const out = new Float32Array(models[0].length + models[1].length);
+    out.set(models[0]);
+    out.set(models[1], models[0].length);
+    return out;
+  };
+  function downloadHinge() {
+    if (models.length < 2 || !lastBuild || !lastBuild.hinge) return;
+    try {
+      saveFile(new Blob([E.mesh.stl(joined())], { type: 'model/stl' }), 'embosser_cerniera.stl');
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   function download3mf() {
     if (!models.length || !lastBuild) return;
     try {
       const bed = lastBuild.bed || E.PRINTERS.a1.bed;
+      if (lastBuild.hinge) {
+        const { blob } = E.export3mf.build3mf([{ name: 'Piastre con cerniera', vertices: joined() }], lastBuild.hinge.footprint, bed, true);
+        saveFile(blob, 'embosser_cerniera.3mf');
+        return;
+      }
       const { blob } = E.export3mf.build3mf(
         [
           { name: 'Positiva', vertices: models[0] },
@@ -467,6 +526,7 @@
     $('nozzle').value = '0.4';
     $('material').value = 'card300';
     $('scaleMode').value = 'fit';
+    $('hinge').value = 'pins';
     $('strokes').checked = $('mirror').checked = true;
     $('invert').checked = false;
     applyPreset();
@@ -509,7 +569,7 @@
       status(
         'Test superato: ' + count + ' mesh controllate. Verificati fill-rule, stili CSS, stroke, dimensioni reali, defs inutilizzati, clipping, ' +
           'input Clipper, inversioni, centro decentrato, piastre R6, tacca specchiata, guide esterne, quote a layer, pareti inclinate, ' +
-          'piano di stampa, dettagli sottili, battute di riscontro e simulazione del foglio. Disegno e parametri utente conservati.',
+          'piano di stampa, dettagli sottili, battute di riscontro, zone tangenti, cerniera print-in-place e simulazione del foglio. Disegno e parametri utente conservati.',
       );
     } catch (e) {
       if (e && e.cancelled) return;
@@ -523,7 +583,7 @@
   }
 
   function start() {
-    const groups = { main: 'params', print: 'printParams', plate: 'plateParams', stops: 'stopParams' };
+    const groups = { main: 'params', print: 'printParams', plate: 'plateParams', stops: 'stopParams', hinge: 'hingeParams' };
     for (const [id, title, value, step, group, flags] of E.PARAMS) {
       const label = document.createElement('label'),
         input = document.createElement('input');
@@ -578,6 +638,15 @@
     $('importPresets').onchange = (e) => importUserPresets(e.target.files[0]);
     listUserPresets();
     for (const id of ['align', 'mirror', 'invert', 'invertArea', 'scaleMode', 'stops']) $(id).onchange = changed;
+    $('hinge').onchange = () => {
+      fitted = false;
+      changed();
+    };
+    $('fold').oninput = () => {
+      $('foldValue').textContent = $('fold').value + '°';
+      viewer.fold(Number($('fold').value));
+    };
+    $('hingeStl').onclick = downloadHinge;
     $('strokes').onchange = reparse;
     $('preset').onchange = applyPreset;
     $('printer').onchange = applyPrinter;

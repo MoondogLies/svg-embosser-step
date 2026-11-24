@@ -1,7 +1,7 @@
 // Configurazione condivisa tra pagina e worker: revisione, parametri e preset.
 'use strict';
 (function (E) {
-  E.VERSION = 'materiali-1';
+  E.VERSION = 'cerniera-1';
   // Fattore di scala mm → interi per Clipper (risoluzione 0,0001 mm).
   E.S = 10000;
 
@@ -38,6 +38,11 @@
     ['pinChamfer', 'Smusso punta perni [mm]', 0, 0.04, 'print'],
     ['holeFlare', 'Svasatura base fori guida [mm]', 0, 0.05, 'print'],
     ['minFeature', 'Dettaglio minimo stampabile [mm], 0 = nessun controllo', 0, 0.02, 'print'],
+    ['hd', 'Diametro perno cerniera [mm], 0 = automatico', 0, 0.1, 'hinge'],
+    ['hc', 'Gioco radiale perno cerniera [mm]', 0.35, 0.05, 'hinge'],
+    ['ha', 'Gioco tra i nodi [mm]', 0.4, 0.05, 'hinge'],
+    ['hgap', 'Gioco nodi-piastra opposta [mm]', 0.6, 0.05, 'hinge'],
+    ['hn', 'Numero nodi (dispari), 0 = automatico', 0, 2, 'hinge'],
   ];
 
   // Ugelli: altezza layer consigliata per i dettagli del rilievo e tolleranza XY aggiuntiva.

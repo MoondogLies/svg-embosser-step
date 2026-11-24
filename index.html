@@ -13,6 +13,8 @@ fieldset{border:1px solid #39414c;border-radius:6px;margin:12px 0;padding:4px 12
 legend{color:#bbc4d0;padding:0 6px}
 label{display:flex;flex-direction:column;gap:5px;margin:8px 0}
 label.check{flex-direction:row;align-items:center;gap:8px}
+label[hidden],section[hidden]{display:none}
+#fold{width:min(420px,100%)}
 input,select,button{font:inherit;padding:8px;border-radius:5px}
 input[type=number]{width:140px;box-sizing:border-box}
 input[type=text]{width:260px;max-width:100%;box-sizing:border-box}
@@ -69,7 +71,7 @@ dialog .note{margin:6px 12px}
 <body>
 <main>
 <h1>SVG → matrici STL</h1>
-<p>Positiva a sinistra, negativa a destra. Trascina per ruotare; rotella per zoomare.</p>
+<p>Positiva a sinistra, negativa a destra (con la cerniera sul lato inferiore: positiva in alto). Trascina per ruotare; rotella per zoomare.</p>
 <div id="drop"><label>File SVG (puoi anche trascinarlo qui)<input id="file" type="file" accept=".svg,image/svg+xml"></label></div>
 <div class="row">
 <label>Preset<select id="preset"><option value="custom">Personalizzato</option><option value="businessCard">Biglietto da visita 85 × 55 mm</option><option value="jCard">J card musicassetta – fronte 101,6 × 63,5 mm</option></select></label>
@@ -87,6 +89,7 @@ dialog .note{margin:6px 12px}
 <p id="myPresetsNote" class="note" aria-live="polite">Salva tutte le impostazioni (preset, stampante, ugello, materiale, parametri) con un nome; restano in questo browser. Esporta il file per conservarli o usarli su un altro computer.</p>
 </fieldset>
 <fieldset><legend>Matrici</legend><section id="params"></section></fieldset>
+<fieldset><legend>Unione delle piastre</legend><div class="row"><label>Piastre<select id="hinge"><option value="pins">Separate, con perni di registrazione</option><option value="right">Unite da cerniera print-in-place sul lato destro (affiancate)</option><option value="bottom">Unite da cerniera print-in-place sul lato inferiore (una sopra l’altra)</option></select></label></div><p id="hingeNote" class="note">Con la cerniera positiva e negativa si stampano in un solo pezzo, già montate e senza supporti; senza perni il foglio può sporgere liberamente dagli altri tre lati, così puoi goffrare anche fogli più grandi delle piastre. La negativa è sempre specchiata per chiudersi a libro sulla positiva.</p><section id="hingeParams"></section><label id="foldBox" hidden>Anteprima chiusura cerniera: <span id="foldValue">0°</span><input id="fold" type="range" min="0" max="180" step="1" value="0"></label></fieldset>
 <fieldset><legend>Piastra e guide</legend><section id="plateParams"></section></fieldset>
 <fieldset><legend>Battute di riscontro</legend><div class="row"><label>Battute<select id="stops"><option value="none">Nessuna</option><option value="bottom">Angoli inferiori (L)</option><option value="corners">Quattro angoli (L)</option></select></label></div><p id="stopsNote" class="note">Rilievi a «L» sulla positiva, appena fuori dal foglio, contro cui appoggiare la carta; sulla negativa ci sono le sedi corrispondenti. Disponibili solo con un preset che definisce il foglio.</p><section id="stopParams"></section></fieldset>
 <fieldset><legend>Stampa 3D</legend><section id="printParams"></section></fieldset>
@@ -98,7 +101,7 @@ dialog .note{margin:6px 12px}
 <label class="check"><input id="strokes" type="checkbox" checked>Converti gli stroke (contorni) in rilievi</label>
 <label class="check"><input id="mirror" type="checkbox" checked>Specchia la negativa per accoppiamento faccia a faccia</label>
 <small>Contorno: rilievo nei vuoti interni delle sagome. Rettangolo: rilievo nei vuoti entro l’ingombro del disegno. Nei preset il risultato viene tagliato al perimetro rosso del foglio. Altezza disegno 0: scala dalla larghezza; altezza positiva: ulteriore limite, senza deformazione. Le impostazioni restano salvate in questo browser.</small>
-<div class="buttons"><button id="fit">Inquadra</button><button id="test">Test integrato</button><button id="reset">Valori predefiniti</button><button id="male" disabled>Esporta positiva STL</button><button id="female" disabled>Esporta negativa STL</button><button id="both" disabled>Esporta 3MF (entrambe sul piano)</button></div>
+<div class="buttons"><button id="fit">Inquadra</button><button id="test">Test integrato</button><button id="reset">Valori predefiniti</button><button id="male" disabled>Esporta positiva STL</button><button id="female" disabled>Esporta negativa STL</button><button id="hingeStl" disabled hidden>Esporta piastre con cerniera STL</button><button id="both" disabled>Esporta 3MF (entrambe sul piano)</button></div>
 <div id="view"></div>
 <h2>Pianta</h2>
 <div id="plan"></div>
@@ -128,6 +131,7 @@ window.addEventListener('error',function(event){var el=document.getElementById('
 <script src="js/config.js"></script>
 <script src="js/geometry.js"></script>
 <script src="js/mesh.js"></script>
+<script src="js/hinge.js"></script>
 <script src="js/model.js"></script>
 <script src="js/svg.js"></script>
 <script src="js/export3mf.js"></script>

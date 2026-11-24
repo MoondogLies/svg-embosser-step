@@ -74,6 +74,11 @@
     return union(paths.map((path) => path.map((p) => ({ X: -p.X, Y: p.Y })).reverse()));
   }
 
+  // Riflessione lungo Y (negativa che si chiude su una cerniera orizzontale).
+  function reflectedY(paths) {
+    return union(paths.map((path) => path.map((p) => ({ X: p.X, Y: -p.Y })).reverse()));
+  }
+
   // Forma di piastra e guide; i valori mancanti assumono quelli storici (R6, perni a 7 mm dal bordo, tacca 4 × 2 mm a 12 mm).
   function plateGeometry(s) {
     const v = (x, d) => (x === undefined || x === null || Number.isNaN(x) ? d : x);
@@ -163,8 +168,21 @@
     return union(out);
   }
 
+  // Regioni che si toccano in un solo vertice (es. cerchio tangente al rettangolo d'ingombro invertito)
+  // danno spigoli con quattro facce: un'apertura morfologica di 0,02 mm le separa senza effetti visibili.
+  function depinch(paths) {
+    const seen = new Set();
+    for (const p of paths)
+      for (const q of p) {
+        const k = q.X + ',' + q.Y;
+        if (seen.has(k)) return offset(offset(paths, -0.02), 0.02);
+        seen.add(k);
+      }
+    return paths;
+  }
+
   E.geometry = {
-    normalize, op, union, diff, intersect, same, area, rect, roundedRect, reflected,
-    plateGeometry, plateShape, oriented, invertArtwork, clipToSheet, offset,
+    normalize, op, union, diff, intersect, same, area, rect, roundedRect, reflected, reflectedY,
+    plateGeometry, plateShape, oriented, invertArtwork, clipToSheet, offset, depinch,
   };
 })((self.Embosser = self.Embosser || {}));

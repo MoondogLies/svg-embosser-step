@@ -157,17 +157,21 @@
   }
 
   // layers: [{z0, z1, paths}] dal basso verso l'alto.
-  function mesh(layers) {
+  function mesh(list) {
+    return conform(layers(list));
+  }
+  // Triangoli degli strati senza riparazione delle giunzioni a T (per unire più parti prima di conform).
+  function layers(list) {
     const out = [];
-    for (let i = 0; i < layers.length; i++) {
-      const l = layers[i],
-        prev = i ? layers[i - 1].paths : [],
-        next = i + 1 < layers.length ? layers[i + 1].paths : [];
+    for (let i = 0; i < list.length; i++) {
+      const l = list[i],
+        prev = i ? list[i - 1].paths : [],
+        next = i + 1 < list.length ? list[i + 1].paths : [];
       walls(out, l.paths, l.z0, l.z1);
       cap(out, diff(l.paths, prev), l.z0, false);
       cap(out, diff(l.paths, next), l.z1, true);
     }
-    return conform(out);
+    return out;
   }
 
   // Verifica la mesh e ne restituisce il volume (mm³); lancia un errore se non è esportabile.
@@ -222,5 +226,5 @@
     return buffer;
   }
 
-  E.mesh = { tri, cap, walls, vertexKey, vertexIds, edgeReport, conform, mesh, check, flatten, stl };
+  E.mesh = { tri, cap, walls, vertexKey, vertexIds, edgeReport, conform, mesh, layers, check, flatten, stl };
 })((self.Embosser = self.Embosser || {}));

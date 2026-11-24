@@ -19,6 +19,7 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Unione e differenza delle regioni poligonali tramite Clipper.
 - Gioco laterale applicato ai contorni della cavità tramite offset.
 - Perni sulla negativa e fori guida passanti sulla positiva.
+- In alternativa ai perni, **piastre unite da una cerniera print-in-place** (sul lato destro o inferiore): un solo pezzo da stampare, già montato, per goffrare anche fogli più grandi delle piastre.
 - Opzione per specchiare la negativa per l’accoppiamento faccia a faccia.
 - Piastre con angoli arrotondati e tacca triangolare di orientamento sul bordo superiore (specchiata sulla negativa quando è attiva la specchiatura); raggio, tacca, posizione dei perni e margine sono regolabili.
 - Preset **J card per musicassetta** (pannello frontale 101,6 × 63,5 mm) con valori per cartoncino.
@@ -51,6 +52,33 @@ La versione attuale esporta STL, non STEP, e non utilizza OpenCascade o WebAssem
 5. Controlla la **Pianta** sotto l’anteprima 3D e gli avvisi sotto lo stato: le zone troppo sottili per l’ugello sono evidenziate in arancione in entrambe le viste.
 6. Dopo il superamento dei controlli, usa **Esporta 3MF (entrambe sul piano)** oppure **Esporta positiva STL** ed **Esporta negativa STL**.
 7. Importa i file nello slicer e verifica dimensioni, orientamento, cavità e anteprima dei layer prima della stampa. Le coordinate dell’app sono espresse in millimetri; se lo slicer chiede l’unità, scegli mm.
+
+## Cerniera print-in-place
+
+In **Unione delle piastre → Piastre** scegli una cerniera al posto dei perni di registrazione:
+
+- **lato destro**: piastre affiancate, la negativa si chiude a libro da destra verso sinistra;
+- **lato inferiore**: positiva in alto e negativa in basso; la negativa si chiude dal basso verso l’alto. Ingombro più compatto in larghezza: con il biglietto da visita (piastre 130 × 70 mm) entra nel piano dell’A1, mentre affiancate no.
+
+Positiva e negativa vengono stampate insieme, a faccia in su, già incastrate e senza supporti. Senza perni il foglio può sporgere liberamente dagli altri tre lati, quindi puoi goffrare anche fogli più grandi delle piastre. Tutte le altre impostazioni (preset, materiale, carta, giochi, profilo A1, pareti inclinate, inversione, battute di riscontro, foglio goffrato) restano le stesse.
+
+- I nodi si alternano tra positiva e negativa, iniziando e finendo con la positiva; il perno fa parte della positiva e attraversa i fori della negativa.
+- L’asse è a *spessore piastra + spessore carta / 2* dal piano: a cerniera chiusa le facce restano distanti esattamente lo spessore della carta.
+- La negativa è sempre specchiata (la casella è bloccata); perni, fori guida, smussi e svasature non servono e i loro campi sono disattivati.
+- A ogni calcolo l’app verifica che i due corpi non si tocchino in nessuna posizione da 0° a 180° (sezioni ogni 2°) e controlla gli spigoli di entrambi.
+- Il cursore **Anteprima chiusura cerniera** piega la negativa nell’anteprima 3D.
+- Export: **Esporta piastre con cerniera STL** (`embosser_cerniera.stl`, due corpi chiusi e separati in un file) oppure 3MF con un unico oggetto centrato sul piano.
+- Dopo la stampa sblocca la cerniera ruotandola con delicatezza avanti e indietro.
+
+| Parametro | Effetto |
+| --- | --- |
+| Diametro perno cerniera | `0` = automatico (fino a 4 mm, quanto permette lo spessore piastra). Sotto il foro restano almeno 0,8 mm. |
+| Gioco radiale perno | Differenza tra raggio del foro e raggio del perno: 0,3–0,4 mm per l’A1 con ugello 0,4. |
+| Gioco tra i nodi | Distanza tra nodi adiacenti lungo l’asse. |
+| Gioco nodi-piastra opposta | Distanza tra i nodi e il bordo dell’altra piastra durante la rotazione. |
+| Numero nodi | Dispari; `0` = automatico, circa 10 mm ciascuno. |
+
+Con piastre sottili il perno è piccolo: con 2 mm di spessore viene circa Ø 1,9 mm e l’app avvisa che è delicato. Per una cerniera robusta usa piastre di almeno 3 mm.
 
 ## Foglio goffrato
 
@@ -283,6 +311,7 @@ Non richiede una fase di build: `index.html` carica script classici (non moduli 
 | `js/config.js` | Revisione, parametri con valori iniziali, preset, profili stampante | pagina e worker |
 | `js/geometry.js` | Operazioni 2D con Clipper: unione, differenza, offset, piastra con angoli e tacca configurabili, inversione, ritaglio al foglio | pagina e worker |
 | `js/mesh.js` | Mesh a strati, triangolazione dei tappi, riparazione delle giunzioni a T, verifica, scrittura STL binario | pagina e worker |
+| `js/hinge.js` | Cerniera print-in-place: nodi, perno, attacco alle piastre, controllo delle interferenze da 0° a 180° | pagina e worker |
 | `js/model.js` | Posizionamento del disegno, controlli su guide e margini, generazione delle due matrici, test geometrici; nessun accesso al DOM | pagina e worker |
 | `js/svg.js` | Lettura dell’SVG: stili CSS, `fill-rule`, stroke, dimensioni reali, elementi non supportati, test di interpretazione | solo pagina (serve `DOMParser`) |
 | `js/export3mf.js` | Archivio 3MF (ZIP senza compressione) con le due piastre disposte sul piano | pagina |

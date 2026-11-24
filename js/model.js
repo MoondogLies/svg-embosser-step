@@ -2,7 +2,8 @@
 // Non usa il DOM, così può girare sia nella pagina sia nel worker.
 //
 // opts = { s: parametri numerici, align: 'center'|'top'|'bottom', invert: bool,
-//          invertArea: 'contour'|'bounds', mirror: bool, sheet: {w,h} | null }
+//          invertArea: 'contour'|'bounds', mirror: bool, sheet: {w,h} | null,
+//          hinge: null | 'right' | 'bottom' (piastre unite da cerniera print-in-place, senza perni) }
 'use strict';
 (function (E) {
   const S = E.S;
@@ -39,6 +40,7 @@
       selected = opts.invert ? G.invertArtwork(filled, opts.invertArea) : filled,
       clipped = G.clipToSheet(selected, sheet);
     if (!clipped.paths.length) throw Error('Nessuna area di rilievo rimane dentro il perimetro del foglio.');
+    clipped.paths = G.depinch(clipped.paths);
     if (!(k > 0) || !Number.isFinite(k)) throw Error('Scala del disegno non valida.');
     clipped.size = [sw * k, sh * k];
     return clipped;
@@ -49,7 +51,7 @@
     const region = [rect(0, 0, sheet.w, sheet.h)];
     if (s.w < sheet.w || s.h < sheet.h) throw Error('La piastra deve contenere il foglio ' + sheet.w + ' × ' + sheet.h + ' mm.');
     const innerEdge = s.w / 2 - G.plateGeometry(s).pinInset - (s.pin + 2 * s.pg) / 2 - (s.holeFlare || 0);
-    if (innerEdge <= sheet.w / 2)
+    if (pins.length && innerEdge <= sheet.w / 2)
       throw Error('Perni o fori troppo vicini al foglio: aumenta la larghezza della piastra o riduci le guide.');
     if (intersect([...pins, ...pockets], region).length) throw Error('Perni o fori entrano nel foglio.');
   }
@@ -142,8 +144,11 @@
       H = heights(s),
       t = Math.tan(((s.draft || 0) * Math.PI) / 180),
       plate = G.plateShape(s),
-      mirrored = !!opts.mirror,
-      negativePlate = mirrored ? reflected(plate) : plate,
+      hinge = opts.hinge === 'right' || opts.hinge === 'bottom' ? opts.hinge : null,
+      // Con la cerniera la negativa è sempre specchiata rispetto all'asse della cerniera.
+      refl = hinge === 'bottom' ? G.reflectedY : reflected,
+      mirrored = hinge ? true : !!opts.mirror,
+      negativePlate = mirrored ? refl(plate) : plate,
       placed = artwork(source, opts),
       art = placed.paths,
       geo = G.plateGeometry(s),
@@ -159,22 +164,33 @@
       if (left < geo.cornerR || right > s.w - geo.cornerR) throw Error('La tacca deve stare sul lato dritto superiore, fuori dagli angoli arrotondati.');
       if (geo.notchD >= s.h / 2) throw Error('Tacca troppo profonda.');
     }
-    if (px - s.pin / 2 - s.pg <= 0) throw Error('Perni troppo vicini al centro: riduci la distanza dei perni dal bordo o allarga la piastra.');
-    if (Math.abs(py) + s.pin / 2 + s.pg >= s.h / 2) throw Error('Perni troppo grandi o troppo spostati in verticale.');
-    if (s.pinChamfer >= H.ph || s.pinChamfer >= s.pin / 2) throw Error('Smusso dei perni troppo grande rispetto a lato e altezza dei perni.');
+    if (!hinge) {
+      if (px - s.pin / 2 - s.pg <= 0) throw Error('Perni troppo vicini al centro: riduci la distanza dei perni dal bordo o allarga la piastra.');
+      if (Math.abs(py) + s.pin / 2 + s.pg >= s.h / 2) throw Error('Perni troppo grandi o troppo spostati in verticale.');
+      if (s.pinChamfer >= H.ph || s.pinChamfer >= s.pin / 2) throw Error('Smusso dei perni troppo grande rispetto a lato e altezza dei perni.');
+    }
     if (opts.bed && (s.w > opts.bed.w || s.h > opts.bed.h))
       throw Error('La piastra ' + s.w + ' × ' + s.h + ' mm non entra nel piano di stampa ' + opts.bed.w + ' × ' + opts.bed.h + ' mm.');
-    const pins = union([-1, 1].map((v) => rect(v * px, py, s.pin, s.pin))),
-      pockets = union([-1, 1].map((v) => rect(v * px, py, s.pin + 2 * s.pg, s.pin + 2 * s.pg))),
-      flared = s.holeFlare > 0 ? offset(pockets, s.holeFlare) : pockets,
+    if (hinge) {
+      const [fw, fh] = E.hinge.layout(s, H.b, hinge).footprint;
+      if (opts.bed && (fw > opts.bed.w || fh > opts.bed.h))
+        throw Error(
+          'Piastre con cerniera: ingombro ' + fw.toFixed(1) + ' × ' + fh.toFixed(1) + ' mm, oltre il piano di stampa ' + opts.bed.w + ' × ' + opts.bed.h + ' mm. ' +
+            (hinge === 'right' ? 'Metti la cerniera sul lato inferiore o riduci la larghezza della piastra.' : 'Metti la cerniera sul lato destro o riduci l’altezza della piastra.'),
+        );
+    }
+    const flare = !hinge && s.holeFlare > 0,
+      pins = hinge ? [] : union([-1, 1].map((v) => rect(v * px, py, s.pin, s.pin))),
+      pockets = hinge ? [] : union([-1, 1].map((v) => rect(v * px, py, s.pin + 2 * s.pg, s.pin + 2 * s.pg))),
+      flared = flare ? offset(pockets, s.holeFlare) : pockets,
       safe = offset(plate, -geo.margin),
-      negativeSafe = mirrored ? reflected(safe) : safe;
+      negativeSafe = mirrored ? refl(safe) : safe;
     validateSheet(s, opts.sheet, pins, flared);
     if (diff(flared, plate).length || diff(pins, negativePlate).length) throw Error('Guide fuori dalla piastra arrotondata o nella tacca.');
     if (diff(art, safe).length || intersect(art, flared).length)
       throw Error('Ridimensionare il disegno: supera margini, angoli arrotondati, tacca o guide.');
-    const mirror = (paths) => (mirrored ? reflected(paths) : paths);
-    const cavity = mirror(offset(art, s.lateral));
+    const mirror = (paths) => (mirrored ? refl(paths) : paths);
+    const cavity = mirror(G.depinch(offset(art, s.lateral)));
     if (diff(cavity, negativeSafe).length || intersect(cavity, pins).length)
       throw Error('Cavità oltre margini, angoli arrotondati, tacca o guide.');
     const depth = H.depth;
@@ -205,13 +221,13 @@
     // Positiva: base (con svasatura dei fori nei primi due layer) e rilievo, a gradini se le pareti sono inclinate.
     const positiveLayers = [];
     const flareH = Math.min(2 * H.dz, H.b / 2);
-    if (s.holeFlare > 0) positiveLayers.push({ z0: 0, z1: flareH, paths: diff(plate, flared) });
-    positiveLayers.push({ z0: s.holeFlare > 0 ? flareH : 0, z1: H.b, paths: diff(plate, pockets) });
+    if (flare) positiveLayers.push({ z0: 0, z1: flareH, paths: diff(plate, flared) });
+    positiveLayers.push({ z0: flare ? flareH : 0, z1: H.b, paths: diff(plate, pockets) });
     const reliefSteps = t > 0 ? Math.max(1, Math.round(H.r / H.dz)) : 1,
       upper = [];
     for (let i = 0; i < reliefSteps; i++) {
       const z0 = H.b + (i * H.r) / reliefSteps,
-        paths = i ? offset(art, -t * ((i * H.r) / reliefSteps), 'round', 0.05) : art;
+        paths = i ? G.depinch(offset(art, -t * ((i * H.r) / reliefSteps), 'round', 0.05)) : art;
       if (!paths.length) break;
       upper.push({ z0, z1: H.b + ((i + 1) * H.r) / reliefSteps, paths });
     }
@@ -235,21 +251,38 @@
         continue;
       }
       lastDelta = delta;
-      const hole = last ? cavity : mirror(offset(art, delta, 'round', 0.05));
+      const hole = last ? cavity : mirror(G.depinch(offset(art, delta, 'round', 0.05)));
       negativeLayers.push({ z0, z1, paths: diff(negativePlate, hole) });
     }
     const c = s.pinChamfer || 0,
       chamferSteps = c > 0 ? Math.max(1, Math.round(c / H.dz)) : 0;
-    negativeLayers.push({ z0: H.b, z1: H.b + H.ph - c, paths: pins });
-    for (let j = 1; j <= chamferSteps; j++)
+    if (!hinge) negativeLayers.push({ z0: H.b, z1: H.b + H.ph - c, paths: pins });
+    for (let j = 1; j <= (hinge ? 0 : chamferSteps); j++)
       negativeLayers.push({
         z0: H.b + H.ph - c + ((j - 1) * c) / chamferSteps,
         z1: H.b + H.ph - c + (j * c) / chamferSteps,
         paths: offset(pins, (-j * c) / chamferSteps),
       });
 
-    const positive = E.mesh.mesh(positiveLayers);
-    const negative = E.mesh.mesh(recess.length ? carve(negativeLayers, H.b - recessDepth, H.b, recess) : negativeLayers);
+    const finalNegativeLayers = recess.length ? carve(negativeLayers, H.b - recessDepth, H.b, recess) : negativeLayers;
+    let positive,
+      negative,
+      hingeInfo = null;
+    if (hinge) {
+      const joined = E.hinge.assemble({
+        s, b: H.b, side: hinge, positiveLayers, negativeLayers: finalNegativeLayers, positivePlate: plate, negativePlate,
+      });
+      positive = joined.positive;
+      negative = joined.negative;
+      hingeInfo = joined.info;
+      if (hingeInfo.pinD < 2)
+        warnings.push(
+          'Perno della cerniera Ø ' + hingeInfo.pinD.toFixed(2).replace('.', ',') + ' mm: funziona, ma è delicato. Per una cerniera più robusta aumenta lo spessore piastra (almeno 3 mm).',
+        );
+    } else {
+      positive = E.mesh.mesh(positiveLayers);
+      negative = E.mesh.mesh(finalNegativeLayers);
+    }
 
     // Avvisi di stampabilità (non bloccanti).
     const thin = { positive: [], negative: [] };
@@ -276,12 +309,12 @@
         'Rilievo ' + (H.r / s.paper).toFixed(1).replace('.', ',') + ' volte lo spessore della carta: rischio di grinze intorno al rilievo e di strappi. ' +
           'Consigliato al massimo 2 volte (scegli il materiale per i valori di partenza).',
       );
-    if (H.ph > H.b + (s.paper || 0) + 1e-9)
+    if (!hinge && H.ph > H.b + (s.paper || 0) + 1e-9)
       warnings.push('Perni più alti dello spessore piastra: sporgono di ' + (H.ph - H.b - (s.paper || 0)).toFixed(2) + ' mm dal retro della positiva a matrici chiuse.');
     if (s.lateral < s.paper) warnings.push('Gioco laterale minore dello spessore carta: la carta potrebbe tagliarsi sui bordi della cavità.');
     if (H.L && Math.abs(H.r - s.r) > 1e-6) warnings.push('Altezza rilievo arrotondata a ' + H.r.toFixed(2) + ' mm (multiplo del layer).');
     if (H.L && Math.abs(H.b - s.b) > 1e-6) warnings.push('Spessore piastra arrotondato a ' + H.b.toFixed(2) + ' mm.');
-    if (H.L && Math.abs(H.ph - s.ph) > 1e-6) warnings.push('Altezza perni arrotondata a ' + H.ph.toFixed(2) + ' mm.');
+    if (!hinge && H.L && Math.abs(H.ph - s.ph) > 1e-6) warnings.push('Altezza perni arrotondata a ' + H.ph.toFixed(2) + ' mm.');
     // Contorni 2D per l'anteprima in pianta (negativa vista dall'alto, già specchiata se richiesto).
     const plan = {
       positive: { plate, safe, relief: art, holes: pockets, flare: s.holeFlare > 0 ? flared : [], stops },
@@ -289,7 +322,7 @@
     };
     return {
       positive, negative, depth, heights: { ...H, stopH, recessDepth }, art, pins, pockets, stops, recess,
-      cut: placed.cut, size: placed.size, warnings, thin, plan,
+      cut: placed.cut, size: placed.size, warnings, thin, plan, hinge: hingeInfo,
     };
   }
 
@@ -470,6 +503,61 @@
       bedRefused = /piano di stampa/.test(e.message);
     }
     if (!bedRefused) throw Error('Piastra oltre il piano non rifiutata.');
+    // Zone del rilievo che si toccano in un solo vertice: separate prima della mesh.
+    {
+      const touching = G.depinch(union([rect(0, 0, 10, 10), rect(10, 10, 10, 10)]));
+      check(E.mesh.mesh([{ z0: 0, z1: 1, paths: touching }]), 'Zone tangenti');
+      count += 1;
+    }
+    // Cerniera print-in-place: due lati, inversioni, profilo A1, battute, piano di stampa.
+    {
+      const hv = { hd: 0, hc: 0.35, ha: 0.4, hgap: 0.6, hn: 0 },
+        jc = E.PRESETS.jCard,
+        jv = { ...jc.values, ...E.PRINTERS.a1.values, ...E.materialValues(jc.defaultMaterial, 0, E.PRINTERS.a1.values.layer, 0.4) };
+      const cases = [
+        [sources.frame, { ...card.values, ...hv, aw: 85 }, 'original', { sheet, hinge: 'right' }],
+        [sources.frame, { ...card.values, ...hv, aw: 85, lateral: 0 }, 'bounds', { sheet, hinge: 'bottom' }],
+        [sources.frame, { ...card.values, ...hv, aw: 60, b: 4, hd: 4, hn: 3 }, 'contour', { hinge: 'right' }],
+        [sources.full, { ...card.values, ...hv, aw: 200 }, 'original', { sheet, hinge: 'bottom' }],
+        [sources.frame, { ...a1, ...hv, aw: 60, b: 3 }, 'original', { sheet, bed, hinge: 'bottom' }],
+        [sources.frame, { ...jv, ...hv, aw: 95.6 }, 'original', { sheet: jc.sheet, stops: 'bottom', bed, hinge: 'bottom' }],
+      ];
+      for (const [src, values, m, extra] of cases) {
+        const r = build(src, opts(values, m, extra)),
+          label = 'Cerniera ' + extra.hinge + ' ' + m;
+        check(r.positive, label + ' positiva');
+        check(r.negative, label + ' negativa');
+        check(r.positive.concat(r.negative), label + ' completa');
+        count += 2;
+        if (!r.hinge || r.pins.length || r.hinge.n % 2 !== 1) throw Error(label + ': cerniera non generata o perni presenti.');
+        const zs = r.positive.concat(r.negative).map((p) => p[2]);
+        if (Math.abs(Math.min(...zs)) > 1e-6) throw Error(label + ': le piastre non appoggiano sul piano.');
+        if (Math.abs(r.hinge.zh - (r.heights.b + values.paper / 2)) > 1e-9) throw Error(label + ': asse della cerniera fuori quota.');
+      }
+      for (const [values, extra, pattern] of [
+        [{ ...a1, ...hv, aw: 60 }, { sheet, bed, hinge: 'right' }, /oltre il piano di stampa/],
+        [{ ...card.values, ...hv, aw: 60, b: 2, hd: 6 }, { hinge: 'right' }, /perno .* troppo grosso/],
+        [{ ...card.values, ...hv, aw: 60, h: 30, hn: 15 }, { hinge: 'right' }, /nodi più corti/],
+      ]) {
+        let refused = false;
+        try {
+          build(sources.frame, opts(values, 'original', extra));
+        } catch (e) {
+          refused = pattern.test(e.message);
+        }
+        if (!refused) throw Error('Cerniera non valida accettata: ' + pattern);
+      }
+      // Il controllo delle interferenze rileva nodi troppo vicini alla piastra opposta.
+      const L = E.hinge.layout({ ...card.values, ...hv }, 2, 'right'),
+        tight = { ...L, eI: Math.round((L.R - 0.3) * S) };
+      let collided = false;
+      try {
+        E.hinge.clearance(tight, E.hinge.profiles(tight, 2), 2);
+      } catch (e) {
+        collided = /interferenza/.test(e.message);
+      }
+      if (!collided) throw Error('Interferenza della cerniera non rilevata.');
+    }
     const bar = union([rect(0, 0, 10, 0.5), rect(0, 6, 10, 10)]),
       split = union([rect(-5.2, 0, 10, 10), rect(5.2, 0, 10, 10)]);
     if (!thinParts(bar, 0.84).length || thinParts([rect(0, 0, 10, 10)], 0.84).length) throw Error('Controllo dettagli sottili errato.');
@@ -494,6 +582,7 @@
         cut: r.cut,
         size: r.size,
         warnings: r.warnings,
+        hinge: r.hinge,
         thin: { positive: loops(r.thin.positive), negative: loops(r.thin.negative) },
         plan: Object.fromEntries(
           Object.entries(r.plan).map(([side, layers]) => [side, Object.fromEntries(Object.entries(layers).map(([k, paths]) => [k, loops(paths)]))]),

@@ -492,3 +492,84 @@ test('i messaggi d’errore usano il nome del campo', async () => {
   assert.equal(await page.getAttribute('#w', 'aria-invalid'), null);
   await context.close();
 });
+
+// Corpi chiusi in un STL binario: ogni spigolo orientato compare una volta, insieme al suo opposto.
+function stlShells(data) {
+  const n = data.readUInt32LE(80),
+    key = (o) => [0, 4, 8].map((k) => Math.round(data.readFloatLE(o + k) * 1000)).join(','),
+    edges = new Map(),
+    parent = new Map(),
+    zs = [],
+    xs = [],
+    ys = [];
+  const find = (x) => {
+    while (parent.get(x) !== x) x = parent.get(x);
+    return x;
+  };
+  for (let i = 0; i < n; i++) {
+    const v = [0, 1, 2].map((j) => key(84 + i * 50 + 12 + j * 12));
+    for (let j = 0; j < 3; j++) {
+      const o = 84 + i * 50 + 12 + j * 12;
+      xs.push(data.readFloatLE(o));
+      ys.push(data.readFloatLE(o + 4));
+      zs.push(data.readFloatLE(o + 8));
+      if (!parent.has(v[j])) parent.set(v[j], v[j]);
+      const e = v[j] + '>' + v[(j + 1) % 3];
+      edges.set(e, (edges.get(e) || 0) + 1);
+    }
+    parent.set(find(v[1]), find(v[0]));
+    parent.set(find(v[2]), find(v[0]));
+  }
+  let open = 0;
+  for (const [e, c] of edges) {
+    const [a, b] = e.split('>');
+    if (c !== 1 || edges.get(b + '>' + a) !== 1) open++;
+  }
+  const shells = new Set([...parent.keys()].map(find)).size;
+  const range = (a) => [Math.min(...a), Math.max(...a)];
+  return { open, shells, x: range(xs), y: range(ys), z: range(zs) };
+}
+
+test('cerniera print-in-place: un solo STL con due corpi chiusi, nessun perno, piega in anteprima', async () => {
+  const { page, context, errors, status } = await openApp();
+  await page.selectOption('#preset', 'businessCard');
+  await waitStatus(page, /carica un SVG/);
+  await page.selectOption('#hinge', 'bottom');
+  assert.equal(await page.isHidden('#male'), true);
+  assert.equal(await page.isVisible('#hingeStl'), true);
+  assert.equal(await page.isDisabled('#pin'), true);
+  assert.equal(await page.isDisabled('#mirror'), true);
+  await loadSvg(page, svg('<circle cx="30" cy="30" r="20"/><path fill-rule="evenodd" d="M60 10h30v40h-30z M68 18v24h14v-24z"/>'));
+  await waitStatus(page, DONE);
+  const text = await status();
+  assert.match(text, /cerniera print-in-place sul lato inferiore: \d+ nodi/, text);
+  assert.match(text, /nessuna interferenza da 0° a 180°/);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#hingeStl')]);
+  assert.equal(download.suggestedFilename(), 'embosser_cerniera.stl');
+  const info = stlShells(fs.readFileSync(await download.path()));
+  assert.equal(info.open, 0, 'STL chiuso');
+  assert.equal(info.shells, 2, 'positiva e negativa sono due corpi separati');
+  assert.ok(Math.abs(info.z[0]) < 1e-3, 'appoggiato sul piano');
+  assert.ok(info.x[1] - info.x[0] <= 256 && info.y[1] - info.y[0] <= 256, 'entra nel piano A1');
+  assert.ok(info.y[1] - info.y[0] > 2 * 70, 'piastre una sopra l’altra');
+  const [d3mf] = await Promise.all([page.waitForEvent('download'), page.click('#both')]);
+  assert.equal(d3mf.suggestedFilename(), 'embosser_cerniera.3mf');
+  const model = unzipStored(fs.readFileSync(await d3mf.path()))['3D/3dmodel.model'].toString('utf8');
+  assert.deepEqual([...model.matchAll(/<object id="\d+" name="([^"]+)"/g)].map((m) => m[1]), ['Piastre con cerniera']);
+  await page.$eval('#fold', (e) => {
+    e.value = 180;
+    e.dispatchEvent(new Event('input'));
+  });
+  assert.equal(await page.textContent('#foldValue'), '180°');
+  // Sul lato destro le piastre affiancate non entrano nel piano dell'A1: errore chiaro.
+  await page.selectOption('#hinge', 'right');
+  await waitStatus(page, DONE);
+  assert.match(await status(), /oltre il piano di stampa.*lato inferiore/, await status());
+  // Tornando ai perni ricompaiono i due export separati.
+  await page.selectOption('#hinge', 'pins');
+  await waitStatus(page, /superano il controllo/);
+  assert.equal(await page.isVisible('#male'), true);
+  assert.equal(await page.isDisabled('#mirror'), false);
+  assert.deepEqual(errors, []);
+  await context.close();
+});

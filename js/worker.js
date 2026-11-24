@@ -7,6 +7,7 @@ importScripts(
   'config.js',
   'geometry.js',
   'mesh.js',
+  'hinge.js',
   'model.js',
 );
 

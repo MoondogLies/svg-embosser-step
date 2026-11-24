@@ -93,8 +93,11 @@
   }
 
   // parts: [{ name, vertices: Float32Array }]; size: [w, h] della piastra; bed: {w, h}.
-  function build3mf(parts, size, bed) {
-    const place = layout(size, bed);
+  // assembled: un solo oggetto già composto (piastre con cerniera), centrato sul piano; size è il suo ingombro.
+  function build3mf(parts, size, bed, assembled = false) {
+    const place = assembled
+      ? { fits: size[0] <= bed.w && size[1] <= bed.h, at: [[bed.w / 2, bed.h / 2]] }
+      : layout(size, bed);
     const objects = parts
       .map((p, i) => '<object id="' + (i + 1) + '" name="' + p.name + '" type="model">' + meshXml(p.vertices) + '</object>')
       .join('');
