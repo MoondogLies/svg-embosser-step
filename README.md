@@ -19,6 +19,8 @@ Il disegno viene letto e le mesh vengono generate nel browser: il codice dell’
 - Unione e differenza delle regioni poligonali tramite Clipper.
 - Gioco laterale applicato ai contorni della cavità tramite offset.
 - Perni sulla negativa e fori guida passanti sulla positiva.
+- Modalità **cerniera print-in-place**: le due piastre in un unico STL, unite da una cerniera già montata, senza perni.
+- Anteprima della chiusura della cerniera da 0° a 180°.
 - Opzione per specchiare la negativa per l’accoppiamento faccia a faccia.
 - Correzione delle giunzioni a T tramite suddivisione degli spigoli.
 - Controllo degli spigoli e del volume prima di abilitare l’export.
@@ -36,6 +38,27 @@ La versione attuale esporta STL, non STEP, e non utilizza OpenCascade o WebAssem
 6. Importa i file nello slicer e verifica dimensioni, orientamento, cavità e anteprima dei layer prima della stampa. Le coordinate dell’app sono espresse in millimetri; se lo slicer chiede l’unità, scegli mm.
 
 I parametri aggiornano le mesh quando confermi la modifica del campo.
+
+## Modalità cerniera print-in-place
+
+Seleziona **Modalità di stampa → Piastre unite da cerniera print-in-place** per stampare positiva e negativa in un solo pezzo, affiancate e collegate da una cerniera sul lato in comune. Senza perni il foglio può sporgere liberamente dagli altri tre lati: è pensata per goffrare su fogli più grandi delle piastre.
+
+- La negativa è sempre specchiata (la casella relativa viene bloccata) e si chiude a libro sulla positiva.
+- L’asse della cerniera è a `spessore piastra + spessore carta / 2` dal piano: a cerniera chiusa le due facce restano distanti esattamente lo spessore carta.
+- I nodi alternano positiva e negativa, iniziando e finendo sulla positiva; il perno appartiene alla positiva e attraversa i fori della negativa.
+- I nodi hanno la base piatta sul piano di stampa: stampa il file così com’è, senza supporti, poi sblocca la cerniera ruotandola con delicatezza.
+- L’app verifica che i due corpi non si intersechino in nessuna posizione da 0° a 180° (controllo 2D sulle sezioni, ogni 2°) e controlla gli spigoli di entrambi i corpi.
+- Il cursore **Anteprima chiusura cerniera** ruota la negativa nell’anteprima 3D.
+
+| Parametro cerniera | Effetto |
+| --- | --- |
+| Diametro perno cerniera | Diametro del perno; deve lasciare almeno 0,8 mm di materiale sotto il foro. |
+| Gioco radiale perno cerniera | Differenza tra raggio del foro e raggio del perno. 0,3–0,5 mm per la maggior parte delle stampanti FDM. |
+| Gioco assiale tra nodi | Distanza tra nodi adiacenti lungo l’asse. |
+| Gioco nodo-piastra | Distanza radiale tra i nodi e il bordo della piastra opposta. |
+| Nodi cerniera | Numero dispari di nodi; `0` li calcola automaticamente (circa 10 mm ciascuno). |
+
+Il file esportato è `embosser_cerniera.stl` e contiene due corpi chiusi e separati, già incastrati.
 
 ## Parametri
 
@@ -97,12 +120,13 @@ Test cornice superato: 8 mesh controllate.
 
 Il test non sostituisce il disegno caricato né modifica gli STL già generati. Usa la posizione e l’opzione di specchiatura correntemente selezionate.
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione con questa correzione mostra `mesh-2` nel messaggio iniziale.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione con la cerniera mostra `hinge-1` nel messaggio iniziale.
 
 ## File esportati
 
 - `embosser_positivo.stl`: piastra con rilievo e fori guida passanti.
 - `embosser_negativo.stl`: piastra con cavità, eventuali isole e perni di registrazione.
+- `embosser_cerniera.stl` (modalità cerniera): entrambe le piastre unite dalla cerniera print-in-place.
 
 ## Struttura e dipendenze
 
