@@ -120,7 +120,7 @@ Test cornice superato: 8 mesh controllate.
 
 Il test non sostituisce il disegno caricato né modifica gli STL già generati. Usa la posizione e l’opzione di specchiatura correntemente selezionate.
 
-Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione con la cerniera mostra `hinge-1` nel messaggio iniziale.
+Se dopo un deploy compare ancora la vecchia interfaccia, forza il ricaricamento del browser. La versione con la cerniera mostra `hinge-2` nel messaggio iniziale.
 
 ## File esportati
 
